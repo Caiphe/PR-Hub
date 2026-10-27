@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { MIN_SIZE } from './bounds'
+import { registerReviewIpc } from './reviewIpc'
 import { loadWindowBounds, trackWindowBounds } from './windowState'
 
 function createWindow(): void {
@@ -54,6 +55,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  registerReviewIpc()
   createWindow()
 
   app.on('activate', function () {

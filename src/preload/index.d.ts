@@ -1,7 +1,7 @@
-import type { Api } from './index'
+import type { PrHubApi } from '../shared/ipc'
 
 declare global {
   interface Window {
-    api: Api
+    api: PrHubApi
   }
 }

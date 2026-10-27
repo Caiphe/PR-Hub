@@ -1,10 +1,16 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { IPC, type PrHubApi, type ReviewEvent } from '../shared/ipc'
 
-// The renderer's only door to the main process. Sandboxed preloads can only
-// import 'electron', so keep this file free of other runtime dependencies.
-// Methods are added here as IPC channels from src/shared/ipc.ts are implemented.
-const api = {}
+// The renderer's only door to the main process. Sandboxed preloads can only require
+// 'electron' at runtime; local imports like ../shared are fine because they're bundled in.
+const api: PrHubApi = {
+  startReview: (input) => ipcRenderer.invoke(IPC.startReview, input),
+  cancelReview: (reviewId) => ipcRenderer.invoke(IPC.cancelReview, reviewId),
+  onReviewEvent: (listener) => {
+    const handler = (_event: IpcRendererEvent, payload: ReviewEvent): void => listener(payload)
+    ipcRenderer.on(IPC.reviewEvent, handler)
+    return () => ipcRenderer.removeListener(IPC.reviewEvent, handler)
+  }
+}
 
 contextBridge.exposeInMainWorld('api', api)
-
-export type Api = typeof api

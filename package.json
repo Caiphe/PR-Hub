@@ -19,10 +19,12 @@
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "review:cli": "tsx scripts/review-cli.ts"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0"
+    "@electron-toolkit/utils": "^4.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.1",
@@ -42,6 +44,7 @@
     "prettier": "^3.9.10",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.3.4",
     "vitest": "^3.2.7"

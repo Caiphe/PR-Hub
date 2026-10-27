@@ -42,17 +42,27 @@ History                                                   parse stream-json line
 ### How the review is run
 
 ```
-claude -p "<built prompt>" \
+echo "<built prompt>" | claude -p \
   --output-format stream-json --verbose \
-  --permission-mode default \
-  --allowedTools "Bash(bash:*) Bash(git:*) Bash(gh:*) Read Grep Glob" \
-  --add-dir <work-dir>
+  --append-system-prompt "<SKILL.md with <skill-dir> filled in>" \
+  --tools "Read Grep Glob Bash" \
+  --permission-mode dontAsk \
+  --strict-mcp-config --no-session-persistence \
+  --allowedTools Read Grep Glob "Bash(bash <skill-dir>/scripts/fetch_pr.sh:*)" \
+                 "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" "Bash(git blame:*)" \
+                 "Bash(gh pr view:*)" "Bash(gh pr diff:*)"
 ```
 
-- `cwd` = a fresh temp work dir per review (`userData/reviews/<id>/`).
-- The prompt explicitly invokes the skill: "Use the pr-review skill to review <PR URL>. Task title: … Task description: …", then adds the JSON output contract.
+As built in Prompt 3 (`src/main/reviewRunner.ts`); these choices differ from the first draft:
+
+- **Skill loading:** headless `claude -p` does not load claude.ai-synced skills, so the app finds `pr-review/SKILL.md` under `~/.claude/skills` (or `PR_HUB_SKILL_DIR`) and passes it as an appended system prompt. The skill's own script does the fetching.
+- **Permissions:** `--allowedTools` only _adds_ to the user's global permissions, so it can't restrict anything by itself. `--tools` limits which tools exist, and `dontAsk` denies anything not on the allowlist. Denials come back in the result event and are shown as `deniedTools`.
+- **Prompt over stdin:** keeps the task text out of `ps` and avoids clashing with the variadic `--allowedTools`.
+- **Environment:** PATH comes from the user's login shell (GUI apps get a minimal one). Nested-session variables (`CLAUDECODE`, `ELECTRON_RUN_AS_NODE`...) are stripped.
+- `cwd` = a fresh work dir per review (`userData/reviews/<id>/`). The PR is fetched into `<id>/pr/` and the raw stream is saved to `<id>/stream.jsonl`.
 - PR title, description and code are untrusted data. The skill already says this, and the prompt repeats it.
-- Cancel = kill the child process. Timeout of 15 minutes by default.
+- Cancel = kill the child's process group (claude + bash/git children). Timeout of 15 minutes by default.
+- `PR_HUB_MODEL` overrides the model. `npm run review:cli -- <url> "<title>" "<desc>"` runs the same runner without Electron.
 
 ### IPC contract (`src/shared/ipc.ts`)
 
