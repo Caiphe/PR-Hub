@@ -68,6 +68,15 @@ describe('extractFindings', () => {
     expect(extractFindings('Could not fetch the PR.').markdown).toBe('Could not fetch the PR.')
   })
 
+  it('makes repeated finding ids unique', () => {
+    const dup = {
+      ...findings,
+      findings: [findings.findings[0], findings.findings[0], findings.findings[0]]
+    }
+    const out = extractFindings(fence(JSON.stringify(dup)))
+    expect(out.findings?.findings.map((f) => f.id)).toEqual(['f1', 'f1-2', 'f1-3'])
+  })
+
   it('fills defaults for optional arrays', () => {
     const out = extractFindings(fence('{"verdict": "approve"}'))
     expect(out.findings).toEqual({

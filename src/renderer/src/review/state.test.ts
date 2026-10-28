@@ -64,6 +64,12 @@ describe('reviewReducer', () => {
     expect(s).toMatchObject({ phase: 'error', error: 'claude not found', endedAt: 5 })
   })
 
+  it('ignores a late started (and its events) after the start failed', () => {
+    const failed: ReviewAction = { type: 'startFailed', requestId: 1, error: 'x', now: 1 }
+    const s = run(start, failed, ev({ type: 'status', message: 'm' }), started)
+    expect(s).toMatchObject({ phase: 'error', reviewId: null, pending: [] })
+  })
+
   it('ignores replies to an abandoned start', () => {
     const second: ReviewAction = { type: 'start', requestId: 2, input, now: 100 }
     const s = run(start, second, started)

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Notification, type Tray } from 'electron'
+import { app, shell, BrowserWindow, Notification, type Tray } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -6,13 +6,19 @@ import { IPC, type ReviewEventBody, type Settings } from '../shared/ipc'
 import type { ReviewInput } from '../shared/validate'
 import { MIN_SIZE } from './bounds'
 import { registerGithubIpc } from './githubIpc'
-import { registerReviewIpc } from './reviewIpc'
+import { handle } from './ipcGuard'
+import { cancelAllReviews, hasRunningReviews, registerReviewIpc } from './reviewIpc'
 import { getSettings, updateSettings } from './settings'
 import { createTray } from './tray'
 import { loadWindowBounds, trackWindowBounds } from './windowState'
 
 // Lets tests and experiments run against a throwaway data folder (history, window state, reviews).
 if (process.env.PR_HUB_USER_DATA) app.setPath('userData', process.env.PR_HUB_USER_DATA)
+
+// One instance per data folder: two would race on history.json, and each would sweep the
+// other's running review folders as orphans. A second launch just shows the existing window.
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) app.quit()
 
 let mainWindow: BrowserWindow | null = null
 // Kept referenced: a garbage-collected Tray disappears from the menu bar.
@@ -58,6 +64,13 @@ function createWindow(): BrowserWindow {
   win.webContents.setWindowOpenHandler((details) => {
     if (/^https?:\/\//.test(details.url)) shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+  // The window only ever shows the app. Navigating it (a clicked link without target=_blank,
+  // a file dropped on the window) would hand window.api to another page.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === win.webContents.getURL()) return
+    event.preventDefault()
+    if (/^https?:\/\//.test(url)) shell.openExternal(url)
   })
 
   // HMR for renderer base on electron-vite cli.
@@ -124,7 +137,10 @@ function newReview(): void {
   showWindow().webContents.send(IPC.newReview)
 }
 
+app.on('second-instance', () => showWindow())
+
 app.whenReady().then(() => {
+  if (!isPrimaryInstance) return
   electronApp.setAppUserModelId('com.prhub.app')
 
   // Default open or close DevTools by F12 in development
@@ -135,8 +151,8 @@ app.whenReady().then(() => {
 
   registerReviewIpc({ onFinished: notifyFinished })
   registerGithubIpc()
-  ipcMain.handle(IPC.getSettings, () => getSettings())
-  ipcMain.handle(IPC.setAlwaysOnTop, (_event, pinned: unknown) => setPinned(pinned === true))
+  handle(IPC.getSettings, () => getSettings())
+  handle(IPC.setAlwaysOnTop, (_event, pinned) => setPinned(pinned === true))
 
   mainWindow = createWindow()
   tray = createTray({
@@ -151,8 +167,16 @@ app.whenReady().then(() => {
   app.on('activate', () => showWindow())
 })
 
-app.on('before-quit', () => {
+let reviewsStopped = false
+app.on('before-quit', (event) => {
   quitting = true
+  // Don't leave headless sessions running (and billing) after quit: stop them first,
+  // bounded so a stuck process can't block quitting.
+  if (!reviewsStopped && hasRunningReviews()) {
+    event.preventDefault()
+    reviewsStopped = true
+    void cancelAllReviews(4000).then(() => app.quit())
+  }
 })
 
 app.on('will-quit', () => {

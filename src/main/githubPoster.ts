@@ -68,16 +68,9 @@ function toGhError(stderr: string): GhError {
 
 /** Login of the authenticated gh user; throws a needsAuth GhError if not logged in. */
 export async function ghAccount(gh: string, env: NodeJS.ProcessEnv): Promise<string> {
-  try {
-    await runGh(gh, ['auth', 'status', '--hostname', 'github.com'], env)
-  } catch (error) {
-    throw error instanceof GhError && error.needsAuth
-      ? error
-      : new GhError(
-          'GitHub CLI is not logged in. Run `gh auth login` in a terminal, then try again.',
-          true
-        )
-  }
+  // toGhError already marks auth problems as needsAuth; anything else (network down,
+  // GitHub 5xx) is passed through so the user isn't sent to re-authenticate for nothing.
+  await runGh(gh, ['auth', 'status', '--hostname', 'github.com'], env)
   return (await runGh(gh, ['api', 'user', '--jq', '.login'], env)).stdout.trim()
 }
 

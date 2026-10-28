@@ -72,12 +72,16 @@ describe('HistoryStore', () => {
     expect(JSON.parse(await readFile(file, 'utf8')).entries).toHaveLength(1)
   })
 
-  it('drops individual invalid entries but keeps the rest', async () => {
-    await writeFile(
-      file,
-      JSON.stringify({ version: 1, entries: [entry('good'), { id: 'bad', status: 'weird' }] })
-    )
-    expect((await new HistoryStore(file).list()).map((s) => s.id)).toEqual(['good'])
+  it('hides unreadable entries but keeps them in the file', async () => {
+    const future = { id: 'future', status: 'archived' }
+    await writeFile(file, JSON.stringify({ version: 1, entries: [entry('good'), future] }))
+    const store = new HistoryStore(file)
+    expect((await store.list()).map((s) => s.id)).toEqual(['good'])
+
+    await store.add(entry('new'))
+    const saved = JSON.parse(await readFile(file, 'utf8')).entries
+    expect(saved.map((e: { id: string }) => e.id)).toEqual(['new', 'good', 'future'])
+    expect(await store.ids()).toEqual(new Set(['new', 'good', 'future']))
   })
 
   it('updates an entry in place and persists it', async () => {

@@ -1,6 +1,6 @@
 import type { Finding, Findings } from '../shared/findings'
 import type { BodyFinding, InlineComment, PostMode } from '../shared/github'
-import { codeFence, languageForFile, looksLikeProse, neutralizeMentions } from '../shared/markdown'
+import { codeFence, languageForFile, looksLikeProse, sanitizeForGitHub } from '../shared/markdown'
 
 // Pure mapping from findings to a GitHub "create a review" payload:
 // POST /repos/{owner}/{repo}/pulls/{number}/reviews
@@ -65,7 +65,7 @@ function location(f: Finding): string {
 function suggestionBlock(f: Finding, inline: boolean): string {
   if (!f.suggestion) return ''
   const code = f.suggestion.replace(/\n$/, '')
-  if (looksLikeProse(code)) return `\n\nSuggested fix: ${code}`
+  if (looksLikeProse(code)) return `\n\nSuggested fix: ${sanitizeForGitHub(code)}`
   // GitHub applies a ```suggestion to exactly the commented line, so only one-line
   // replacements become one-click suggestions; anything longer would duplicate code.
   if (inline && !code.includes('\n')) return `\n\n${codeFence(code, 'suggestion')}`
@@ -74,16 +74,15 @@ function suggestionBlock(f: Finding, inline: boolean): string {
 
 export function inlineCommentBody(f: Finding): string {
   return (
-    neutralizeMentions(`**${SEVERITY[f.severity]}: ${f.title}**\n\n${f.body}`.trim()) +
+    sanitizeForGitHub(`**${SEVERITY[f.severity]}: ${f.title}**\n\n${f.body}`.trim()) +
     suggestionBlock(f, true)
   )
 }
 
 function bodyFindingSection(f: Finding): string {
   return (
-    neutralizeMentions(
-      `**${SEVERITY[f.severity]}: ${f.title}**${location(f)}\n\n${f.body}`.trim()
-    ) + suggestionBlock(f, false)
+    sanitizeForGitHub(`**${SEVERITY[f.severity]}: ${f.title}**${location(f)}\n\n${f.body}`.trim()) +
+    suggestionBlock(f, false)
   )
 }
 
@@ -127,7 +126,7 @@ export function buildReview(input: BuildInput): BuiltReview {
 
   const sections = [
     `**PR Hub review: ${VERDICT[input.findings.verdict]}**`,
-    input.findings.summary && neutralizeMentions(input.findings.summary),
+    input.findings.summary && sanitizeForGitHub(input.findings.summary),
     bodyFindings.length > 0 &&
       [
         comments.length > 0 ? '### Other findings' : '### Findings',

@@ -19,6 +19,9 @@ interface HistoryFile {
 // Each read-modify-write runs in a queue so concurrent finishes can't drop each other's entries.
 export class HistoryStore {
   private entries: HistoryEntry[] = []
+  // Entries this build can't parse (e.g. written by a newer version). Kept as-is and written
+  // back, so a schema change or downgrade never silently deletes history.
+  private unreadable: unknown[] = []
   private loaded: Promise<void> | null = null
   private queue: Promise<unknown> = Promise.resolve()
 
@@ -54,14 +57,20 @@ export class HistoryStore {
     }
 
     // One bad entry shouldn't cost the rest of the history.
-    this.entries = parsed.entries.flatMap((entry) => {
+    for (const entry of parsed.entries) {
       const result = HistoryEntrySchema.safeParse(entry)
-      return result.success ? [result.data] : []
-    })
+      if (result.success) this.entries.push(result.data)
+      else this.unreadable.push(entry)
+    }
+    if (this.unreadable.length > 0) {
+      console.error(
+        `History: ${this.unreadable.length} entries couldn't be read and were kept as-is`
+      )
+    }
   }
 
   private async persist(): Promise<void> {
-    const body: HistoryFile = { version: FILE_VERSION, entries: this.entries }
+    const body = { version: FILE_VERSION, entries: [...this.entries, ...this.unreadable] }
     const tmp = `${this.file}.tmp`
     await writeFile(tmp, JSON.stringify(body))
     await rename(tmp, this.file)
@@ -81,8 +90,14 @@ export class HistoryStore {
     return (await this.load()).find((e) => e.id === id) ?? null
   }
 
+  /** Ids of every saved entry, including ones this build can't read (their folders stay). */
   async ids(): Promise<Set<string>> {
-    return new Set((await this.load()).map((e) => e.id))
+    const readable = (await this.load()).map((e) => e.id)
+    const other = this.unreadable.flatMap((e) => {
+      const id = (e as { id?: unknown } | null)?.id
+      return typeof id === 'string' ? [id] : []
+    })
+    return new Set([...readable, ...other])
   }
 
   /** Adds an entry (newest first) and returns the ids trimmed off the end. */

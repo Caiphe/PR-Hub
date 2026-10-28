@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReplayVariant } from '@shared/ipc'
+import { REPLAY_VARIANTS, type ReplayVariant } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
 import { PinButton } from './components/PinButton'
 import { RecentReviews } from './components/RecentReviews'
@@ -9,11 +9,11 @@ import { dialogOpen } from './review/keyboard'
 import { isTerminal } from './review/state'
 import { useReview } from './review/useReview'
 
-const REPLAYS: Array<[ReplayVariant, string]> = [
-  ['full', 'full'],
-  ['no-findings', 'no findings'],
-  ['error', 'error']
-]
+const REPLAY_LABELS: Record<ReplayVariant, string> = {
+  full: 'full',
+  'no-findings': 'no findings',
+  error: 'error'
+}
 
 function App(): React.JSX.Element {
   const review = useReview()
@@ -96,14 +96,14 @@ function App(): React.JSX.Element {
       {import.meta.env.DEV && (
         <p className="dev-tools muted small">
           Dev · replay fixture:{' '}
-          {REPLAYS.map(([variant, label]) => (
+          {REPLAY_VARIANTS.map((variant) => (
             <button
               key={variant}
               type="button"
               className="link-button"
               onClick={() => review.replay(variant)}
             >
-              {label}
+              {REPLAY_LABELS[variant]}
             </button>
           ))}
         </p>

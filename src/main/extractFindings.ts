@@ -59,5 +59,17 @@ export function extractFindings(resultText: string): Extracted {
       findingsError: `Findings block doesn't match the schema: ${issue.path.join('.')} ${issue.message}`
     }
   }
-  return { markdown, findings: parsed.data }
+  return { markdown, findings: { ...parsed.data, findings: uniqueIds(parsed.data.findings) } }
+}
+
+// Selection, posting and "posted" tracking key on finding ids, so a repeated id from the
+// model would make ticking one finding post both. Later duplicates get a suffix.
+function uniqueIds<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  return items.map((item) => {
+    let id = item.id
+    for (let n = 2; seen.has(id); n++) id = `${item.id}-${n}`
+    seen.add(id)
+    return id === item.id ? item : { ...item, id }
+  })
 }

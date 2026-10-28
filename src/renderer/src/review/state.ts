@@ -113,7 +113,11 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
 
   switch (action.type) {
     case 'started': {
-      if (action.requestId !== state.requestId || state.reviewId) return state
+      // Only a review that's still starting can learn its id; a late reply after a failed
+      // start must not make an errored review cancellable or postable.
+      if (action.requestId !== state.requestId || state.reviewId || state.phase !== 'starting') {
+        return state
+      }
       const mine = state.pending.filter((e) => e.reviewId === action.reviewId)
       const base: ReviewState = { ...state, reviewId: action.reviewId, pending: [] }
       return mine.reduce((s, e) => applyEvent(s, e, action.now), base)

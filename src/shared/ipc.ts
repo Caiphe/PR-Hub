@@ -25,7 +25,8 @@ export interface Settings {
 }
 
 /** Dev-only fixture replay modes: the full review, markdown only, or a mid-run failure. */
-export type ReplayVariant = 'full' | 'no-findings' | 'error'
+export const REPLAY_VARIANTS = ['full', 'no-findings', 'error'] as const
+export type ReplayVariant = (typeof REPLAY_VARIANTS)[number]
 
 export type StartReviewResult = { ok: true; reviewId: string } | { ok: false; error: string }
 

@@ -47,24 +47,28 @@ export function codeFence(code: string, language = ''): string {
   return `${fence}${language}\n${code.replace(/\n$/, '')}\n${fence}`
 }
 
-// Outside code, @user and @org/team notify people on GitHub. Review text is partly derived from
-// untrusted PR content, so a zero-width space is inserted after the @ to stop any pings.
-// Code spans and fenced blocks are left alone: mentions don't fire there, and suggestions must
-// stay byte-exact (e.g. Python decorators).
-const CODE = /(`{3,})[\s\S]*?\1|`[^`\n]*`/g
+// Makes model-written markdown safe to post on GitHub. Review text is partly derived from
+// untrusted PR content, so outside code:
+//  - @user and @org/team get a zero-width space after the @ so they can't ping anyone;
+//  - `<` is escaped so raw HTML can't render or hide text (e.g. `<!-- secret -->` would be
+//    invisible in the preview but present in the posted comment).
+// Code spans and fenced blocks are left alone: neither fires there, and suggestions must stay
+// byte-exact (e.g. Python decorators, generics). A backslash-escaped backtick is literal text
+// on GitHub, so it doesn't open a code span here either.
+const CODE = /(`{3,})[\s\S]*?\1|(?<!\\)`[^`\n]*(?<!\\)`/g
 
-export function neutralizeMentions(markdown: string): string {
+export function sanitizeForGitHub(markdown: string): string {
   let out = ''
   let last = 0
   for (const match of markdown.matchAll(CODE)) {
-    out += escapeText(markdown.slice(last, match.index)) + match[0]
+    out += sanitizeText(markdown.slice(last, match.index)) + match[0]
     last = match.index! + match[0].length
   }
-  return out + escapeText(markdown.slice(last))
+  return out + sanitizeText(markdown.slice(last))
 }
 
-function escapeText(text: string): string {
-  return text.replace(/(^|[^\w`])@([A-Za-z0-9][\w-]*)/g, '$1@\u200b$2')
+function sanitizeText(text: string): string {
+  return text.replace(/</g, '&lt;').replace(/(^|[^\w])@([A-Za-z0-9][\w-]*)/g, '$1@\u200b$2')
 }
 
 // Imperative English at the start ("Add a guard: ...", "Consider using ...") means the model put

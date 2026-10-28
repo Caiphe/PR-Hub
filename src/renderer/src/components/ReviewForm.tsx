@@ -3,7 +3,6 @@ import { parsePrUrl, validateReviewInput, type ReviewInput } from '@shared/valid
 
 interface Props {
   onSubmit: (input: ReviewInput) => void
-  busy?: boolean
   /** Pre-fills the form, e.g. with the last task when coming back from a review. */
   initialValues?: ReviewInput
 }
@@ -13,13 +12,12 @@ type Field = keyof ReviewInput
 const EMPTY: ReviewInput = { title: '', prUrl: '', description: '' }
 const isMac = navigator.userAgent.includes('Mac')
 
-export function ReviewForm({ onSubmit, busy = false, initialValues }: Props): React.JSX.Element {
+export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Element {
   const [values, setValues] = useState<ReviewInput>(initialValues ?? EMPTY)
   // Errors appear only after a field has been left once, so the form doesn't shout while typing.
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({})
   const errors = useMemo(() => validateReviewInput(values), [values])
   const isValid = Object.keys(errors).length === 0
-  const canSubmit = isValid && !busy
   const id = useId()
 
   const update = (field: Field) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -29,7 +27,7 @@ export function ReviewForm({ onSubmit, busy = false, initialValues }: Props): Re
     touched[field] ? errors[field] : undefined
 
   const submit = (): void => {
-    if (!canSubmit) {
+    if (!isValid) {
       setTouched({ title: true, prUrl: true, description: true })
       return
     }
@@ -56,7 +54,6 @@ export function ReviewForm({ onSubmit, busy = false, initialValues }: Props): Re
     value: values[field],
     onChange: update(field),
     onBlur: touch(field),
-    disabled: busy,
     'aria-invalid': Boolean(shownError(field)),
     'aria-describedby': shownError(field) ? `${id}-${field}-error` : undefined
   })
@@ -113,8 +110,8 @@ export function ReviewForm({ onSubmit, busy = false, initialValues }: Props): Re
 
       <div className="form-actions">
         <span className="hint">{isMac ? '⌘' : 'Ctrl'} + Enter</span>
-        <button type="submit" className="primary" disabled={!canSubmit}>
-          {busy ? 'Reviewing…' : 'Review PR'}
+        <button type="submit" className="primary" disabled={!isValid}>
+          Review PR
         </button>
       </div>
     </form>

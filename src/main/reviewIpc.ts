@@ -1,4 +1,4 @@
-import { app, ipcMain, type WebContents } from 'electron'
+import { app, type WebContents } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import { mkdir, readdir, readFile, rm } from 'fs/promises'
@@ -6,6 +6,7 @@ import { join } from 'path'
 import type { HistoryEntry } from '../shared/history'
 import {
   IPC,
+  REPLAY_VARIANTS,
   type ReplayVariant,
   type ReviewEvent,
   type ReviewEventBody,
@@ -14,6 +15,7 @@ import {
 import { parsePrUrl, validateReviewInput, type ReviewInput } from '../shared/validate'
 import { loadSkill, resolveReviewEnvironment, type ReviewEnvironment } from './environment'
 import { HistoryStore } from './historyStore'
+import { handle } from './ipcGuard'
 import { replayFixture } from './replay'
 import { runReview, type ReviewHandle } from './reviewRunner'
 
@@ -116,13 +118,17 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
       skill,
       model: process.env.PR_HUB_MODEL || undefined,
       emit: (body) => {
-        send(sender, { ...body, reviewId })
-        if (body.type === 'done' || body.type === 'error') onFinished(input, body)
-        if (body.type === 'done' || body.type === 'error' || body.type === 'cancelled') {
-          finishReview(reviewId, input, startedAt, body).catch((error) =>
-            console.error('Failed to record review', error)
-          )
+        if (body.type !== 'done' && body.type !== 'error' && body.type !== 'cancelled') {
+          return send(sender, { ...body, reviewId })
         }
+        // Save before telling the renderer, so actions on the finished review (like posting
+        // to GitHub, which reads it from history) can't race the write.
+        finishReview(reviewId, input, startedAt, body)
+          .catch((error) => console.error('Failed to record review', error))
+          .finally(() => {
+            send(sender, { ...body, reviewId })
+            if (body.type !== 'cancelled') onFinished(input, body)
+          })
       }
     })
     running.set(reviewId, handle)
@@ -133,10 +139,8 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
   }
 }
 
-const REPLAY_VARIANTS: ReplayVariant[] = ['full', 'no-findings', 'error']
-
 function replay(sender: WebContents, variant: unknown): StartReviewResult {
-  const v = REPLAY_VARIANTS.includes(variant as ReplayVariant) ? (variant as ReplayVariant) : 'full'
+  const v: ReplayVariant = REPLAY_VARIANTS.find((known) => known === variant) ?? 'full'
   const reviewId = randomUUID()
   const handle = replayFixture(join(app.getAppPath(), 'fixtures/sample-stream.jsonl'), v, (body) =>
     send(sender, { ...body, reviewId })
@@ -162,19 +166,28 @@ export function registerReviewIpc(options: { onFinished?: ReviewFinishedListener
   if (options.onFinished) onFinished = options.onFinished
   history = new HistoryStore(join(app.getPath('userData'), 'history.json'))
 
-  ipcMain.handle(IPC.startReview, (event, input) => startReview(event.sender, input))
-  ipcMain.handle(IPC.cancelReview, (_event, reviewId: unknown) => {
+  handle(IPC.startReview, (event, input) => startReview(event.sender, input))
+  handle(IPC.cancelReview, (_event, reviewId: unknown) => {
     if (typeof reviewId === 'string') running.get(reviewId)?.cancel()
   })
-  ipcMain.handle(IPC.listHistory, () => history.list())
-  ipcMain.handle(IPC.getHistory, (_event, id: unknown) =>
-    typeof id === 'string' ? history.get(id) : null
-  )
+  handle(IPC.listHistory, () => history.list())
+  handle(IPC.getHistory, (_event, id: unknown) => (typeof id === 'string' ? history.get(id) : null))
   // Fixture replay exists only in development builds; packaged apps never register it.
-  if (is.dev) ipcMain.handle(IPC.replayFixture, (event, variant) => replay(event.sender, variant))
+  if (is.dev) handle(IPC.replayFixture, (event, variant) => replay(event.sender, variant))
 
   sweepOrphanedReviewDirs().catch((error) => console.error('Review folder sweep failed', error))
+}
 
-  // Don't leave headless sessions running after the window is gone.
-  app.on('before-quit', () => running.forEach((handle) => handle.cancel()))
+export function hasRunningReviews(): boolean {
+  return running.size > 0
+}
+
+/** Cancels every running review and waits (bounded) for their processes to exit. */
+export async function cancelAllReviews(timeoutMs: number): Promise<void> {
+  const handles = [...running.values()]
+  handles.forEach((h) => h.cancel())
+  await Promise.race([
+    Promise.all(handles.map((h) => h.finished)),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs))
+  ])
 }

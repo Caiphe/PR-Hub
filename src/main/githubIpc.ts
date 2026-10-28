@@ -1,10 +1,10 @@
-import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import type { PostMode, PostRecord, PostResult, PreviewResult } from '../shared/github'
 import { IPC } from '../shared/ipc'
 import { parsePrUrl, type PrRef } from '../shared/validate'
 import { fetchPrState, ghAccount, GhError, resolveGh, submitReview } from './githubPoster'
 import { buildReview, commentableMap, type ReviewPayload } from './githubReview'
+import { handle } from './ipcGuard'
 import { getEnvironment, getHistory } from './reviewIpc'
 
 // Posting is two steps so nothing reaches GitHub without the user seeing it first:
@@ -53,26 +53,28 @@ async function preview(
     const gh = await resolveGh(env)
     const account = await ghAccount(gh, env)
     const pr = await fetchPrState(gh, ref, env)
-    const headMoved = !!entry.headSha && entry.headSha !== pr.headSha
+    // Line numbers are only trusted on the commit the review saw. If it moved, or we never
+    // learned which commit that was, every finding goes in the body instead.
+    const headKnown = !!entry.headSha
+    const headMoved = !headKnown || entry.headSha !== pr.headSha
 
     const built = buildReview({
       findings: entry.result.findings,
       selectedIds: ids,
       mode: postMode,
-      // Anchor to the commit the review actually saw when we know it.
-      headSha: entry.headSha && !headMoved ? entry.headSha : pr.headSha,
+      headSha: pr.headSha,
       commentable: commentableMap(pr.files),
       headMoved
     })
 
     const warnings: string[] = []
-    if (headMoved) {
+    if (!headKnown) {
+      warnings.push(
+        "This review didn't record which commit it saw, so findings are posted in the review body instead of on lines."
+      )
+    } else if (headMoved) {
       warnings.push(
         'The PR has new commits since this review ran, so findings are posted in the review body instead of on lines. Consider re-running the review.'
-      )
-    } else if (!entry.headSha) {
-      warnings.push(
-        "This review didn't record which commit it saw. Line comments assume the PR hasn't changed since."
       )
     }
     const already = new Set((entry.posted ?? []).flatMap((p) => p.findingIds))
@@ -124,10 +126,11 @@ async function post(previewId: unknown): Promise<PostResult> {
       mode: cached.mode,
       findingIds: cached.findingIds
     }
-    await getHistory().update(cached.reviewId, (e) => ({
-      ...e,
-      posted: [...(e.posted ?? []), record]
-    }))
+    // The review is on GitHub now. Failing to record it locally must not read as a failed
+    // post, or a retry would create a duplicate review.
+    await getHistory()
+      .update(cached.reviewId, (e) => ({ ...e, posted: [...(e.posted ?? []), record] }))
+      .catch((error) => console.error('Posted to GitHub but failed to record it', error))
     return { ok: true, record }
   } catch (error) {
     return errorResult(error)
@@ -135,8 +138,6 @@ async function post(previewId: unknown): Promise<PostResult> {
 }
 
 export function registerGithubIpc(): void {
-  ipcMain.handle(IPC.previewPost, (_e, reviewId, findingIds, mode) =>
-    preview(reviewId, findingIds, mode)
-  )
-  ipcMain.handle(IPC.post, (_e, previewId) => post(previewId))
+  handle(IPC.previewPost, (_e, reviewId, findingIds, mode) => preview(reviewId, findingIds, mode))
+  handle(IPC.post, (_e, previewId) => post(previewId))
 }
