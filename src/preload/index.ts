@@ -1,21 +1,27 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC, type PrHubApi, type ReviewEvent } from '../shared/ipc'
+import { IPC, type PrHubApi, type ReviewEvent, type Settings } from '../shared/ipc'
+
+function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
+  const handler = (_event: IpcRendererEvent, payload: T): void => listener(payload)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
+}
 
 // The renderer's only door to the main process. Sandboxed preloads can only require
 // 'electron' at runtime; local imports like ../shared are fine because they're bundled in.
 const api: PrHubApi = {
   startReview: (input) => ipcRenderer.invoke(IPC.startReview, input),
   cancelReview: (reviewId) => ipcRenderer.invoke(IPC.cancelReview, reviewId),
-  onReviewEvent: (listener) => {
-    const handler = (_event: IpcRendererEvent, payload: ReviewEvent): void => listener(payload)
-    ipcRenderer.on(IPC.reviewEvent, handler)
-    return () => ipcRenderer.removeListener(IPC.reviewEvent, handler)
-  },
+  onReviewEvent: (listener) => subscribe<ReviewEvent>(IPC.reviewEvent, listener),
   listHistory: () => ipcRenderer.invoke(IPC.listHistory),
   getHistory: (id) => ipcRenderer.invoke(IPC.getHistory, id),
   previewPost: (reviewId, findingIds, mode) =>
     ipcRenderer.invoke(IPC.previewPost, reviewId, findingIds, mode),
   post: (previewId) => ipcRenderer.invoke(IPC.post, previewId),
+  getSettings: () => ipcRenderer.invoke(IPC.getSettings),
+  setAlwaysOnTop: (pinned) => ipcRenderer.invoke(IPC.setAlwaysOnTop, pinned),
+  onSettingsChanged: (listener) => subscribe<Settings>(IPC.settingsChanged, listener),
+  onNewReview: (listener) => subscribe<void>(IPC.newReview, () => listener()),
   replayFixture: (variant) => ipcRenderer.invoke(IPC.replayFixture, variant)
 }
 

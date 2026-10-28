@@ -9,8 +9,24 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # Development-only: test fixtures, build scripts, plans, icon sources, tooling state.
+  - '!{fixtures,scripts,coverage,.gstack}/**'
+  - '!{PLAN.md,PROMPTS.md,vitest.config.ts}'
+  - '!resources/icons/**'
 asarUnpack:
   - resources/**
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+  # Ad-hoc signature: enough for Apple Silicon to run a local build. For distribution,
+  # set a Developer ID identity here and enable notarize.
+  identity: '-'
+  hardenedRuntime: false
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
 win:
   executableName: pr-hub
 nsis:
@@ -18,21 +34,11 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
-mac:
-  entitlementsInherit: build/entitlements.mac.plist
-  notarize: false
-dmg:
-  artifactName: ${name}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
+  maintainer: caipheilunga@gmail.com
+  category: Development
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

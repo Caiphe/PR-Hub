@@ -3,8 +3,10 @@ import type { Findings } from '@shared/findings'
 import type { PostRecord } from '@shared/github'
 import { isTerminal, type ReviewState } from '../review/state'
 import { formatCost, formatDuration, prLabel } from '../review/format'
+import { dialogOpen } from '../review/keyboard'
 import { FindingsPanel, type FindingSelection } from './FindingsPanel'
 import { Markdown } from './Markdown'
+import { PinButton } from './PinButton'
 import { PostDialog } from './PostDialog'
 
 interface Props {
@@ -25,6 +27,11 @@ function defaultSelection(findings: Findings | null, posted: Set<string>): Set<s
 }
 
 type Tab = 'findings' | 'markdown'
+
+const TABS = [
+  ['findings', 'Findings'],
+  ['markdown', 'Full review']
+] as const
 
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -85,15 +92,27 @@ function Outcome({
     )
   }
 
+  // ARIA tabs pattern: one tab stop for the group, arrow keys move between tabs.
+  const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End')
+      return
+    e.preventDefault()
+    const next: Tab =
+      e.key === 'Home'
+        ? 'findings'
+        : e.key === 'End'
+          ? 'markdown'
+          : tab === 'findings'
+            ? 'markdown'
+            : 'findings'
+    setTab(next)
+    document.getElementById(`tab-${next}`)?.focus()
+  }
+
   return (
     <>
-      <div className="tabs" role="tablist" aria-label="Review output">
-        {(
-          [
-            ['findings', 'Findings'],
-            ['markdown', 'Full review']
-          ] as const
-        ).map(([id, label]) => (
+      <div className="tabs" role="tablist" aria-label="Review output" onKeyDown={onTabKey}>
+        {TABS.map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -101,6 +120,7 @@ function Outcome({
             id={`tab-${id}`}
             aria-selected={tab === id}
             aria-controls={`panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
             className={tab === id ? 'is-active' : ''}
             onClick={() => setTab(id)}
           >
@@ -167,15 +187,42 @@ export function ReviewView({
     if (running && !window.confirm('A review is still running. Cancel it and go back?')) return
     onBack()
   }
+  const backRef = useRef(back)
+  useEffect(() => {
+    backRef.current = back
+  })
+
+  // Esc goes back, unless a dialog is open (Esc closes that instead).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !dialogOpen()) backRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Move focus to the review's title so keyboard and screen-reader users land in the new view.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
 
   return (
     <div className="review-view">
       <header className="review-header">
-        <button type="button" className="icon-button" onClick={back} aria-label="Back to the form">
+        <button
+          type="button"
+          className="icon-button"
+          onClick={back}
+          aria-label="Back to the form"
+          title="Back (Esc)"
+        >
           ←
         </button>
         <div className="review-heading">
-          <h1 title={state.input.title}>{state.input.title}</h1>
+          <h1 ref={headingRef} tabIndex={-1} title={state.input.title}>
+            {state.input.title}
+          </h1>
           <a className="pr-ref" href={state.input.prUrl} target="_blank" rel="noreferrer">
             {prLabel(state.input.prUrl)}
           </a>
@@ -195,6 +242,7 @@ export function ReviewView({
             Re-run
           </button>
         )}
+        <PinButton />
       </header>
 
       <div className="review-body" ref={bodyRef}>

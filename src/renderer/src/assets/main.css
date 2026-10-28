@@ -1047,3 +1047,37 @@ button.primary.danger {
 .suggestion-pill {
   margin-bottom: 6px;
 }
+
+/* Header pin + focus */
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pin-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--muted);
+}
+
+.pin-button.is-pinned {
+  color: var(--accent);
+  background: var(--info-bg);
+}
+
+.review-heading h1:focus {
+  outline: none;
+}
+
+.review-heading h1:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

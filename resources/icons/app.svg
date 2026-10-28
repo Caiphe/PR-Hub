@@ -1,0 +1,22 @@
+<!-- PR Hub app icon, 1024 canvas with the macOS icon grid (824px body, 100px margin). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="4"/>
+  <g transform="translate(232 232) scale(35)" fill="none" stroke="#fff" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="4" cy="3.5" r="1.75"/>
+    <circle cx="4" cy="12.5" r="1.75"/>
+    <path d="M4 5.25v5.5"/>
+    <circle cx="12" cy="12.5" r="1.75"/>
+    <path d="M12 10.75V7a2.5 2.5 0 0 0-2.5-2.5H7.5"/>
+    <path d="M9.25 2.75 7.5 4.5l1.75 1.75"/>
+  </g>
+</svg>

@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReplayVariant } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
+import { PinButton } from './components/PinButton'
 import { RecentReviews } from './components/RecentReviews'
 import { ReviewForm } from './components/ReviewForm'
 import { ReviewView } from './components/ReviewView'
+import { dialogOpen } from './review/keyboard'
+import { isTerminal } from './review/state'
 import { useReview } from './review/useReview'
 
 const REPLAYS: Array<[ReplayVariant, string]> = [
@@ -16,6 +19,43 @@ function App(): React.JSX.Element {
   const review = useReview()
   // The last real task, so "back" returns to a filled-in form for editing or re-running.
   const [lastInput, setLastInput] = useState<ReviewInput | undefined>()
+  // Bumped to remount (and so clear) the form for a new review.
+  const [formKey, setFormKey] = useState(0)
+
+  const newReview = (): void => {
+    const state = review.state
+    if (
+      state &&
+      !isTerminal(state.phase) &&
+      !state.isReplay &&
+      !window.confirm('A review is still running. Cancel it and start a new one?')
+    ) {
+      return
+    }
+    review.reset()
+    setLastInput(undefined)
+    setFormKey((k) => k + 1)
+  }
+  // Listeners below are registered once; this ref always points at the current handler.
+  const newReviewRef = useRef(newReview)
+  useEffect(() => {
+    newReviewRef.current = newReview
+  })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key.toLowerCase() === 'n' && (e.metaKey || e.ctrlKey) && !dialogOpen()) {
+        e.preventDefault()
+        newReviewRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    const unsubscribe = window.api.onNewReview(() => newReviewRef.current())
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      unsubscribe()
+    }
+  }, [])
 
   if (review.state) {
     return (
@@ -38,10 +78,14 @@ function App(): React.JSX.Element {
   return (
     <main className="shell">
       <header className="app-header">
-        <h1>PR Hub</h1>
-        <p className="muted">Review a pull request against its task.</p>
+        <div>
+          <h1>PR Hub</h1>
+          <p className="muted">Review a pull request against its task.</p>
+        </div>
+        <PinButton />
       </header>
       <ReviewForm
+        key={formKey}
         initialValues={lastInput}
         onSubmit={(input) => {
           setLastInput(input)

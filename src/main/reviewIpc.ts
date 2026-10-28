@@ -20,6 +20,10 @@ import { runReview, type ReviewHandle } from './reviewRunner'
 const running = new Map<string, ReviewHandle>()
 let environment: Promise<ReviewEnvironment> | null = null
 let history: HistoryStore
+let onFinished: ReviewFinishedListener = () => {}
+
+/** Called when a real (non-replay) review completes or fails. */
+export type ReviewFinishedListener = (input: ReviewInput, event: ReviewEventBody) => void
 
 const reviewsDir = (): string => join(app.getPath('userData'), 'reviews')
 
@@ -113,6 +117,7 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
       model: process.env.PR_HUB_MODEL || undefined,
       emit: (body) => {
         send(sender, { ...body, reviewId })
+        if (body.type === 'done' || body.type === 'error') onFinished(input, body)
         if (body.type === 'done' || body.type === 'error' || body.type === 'cancelled') {
           finishReview(reviewId, input, startedAt, body).catch((error) =>
             console.error('Failed to record review', error)
@@ -153,7 +158,8 @@ async function sweepOrphanedReviewDirs(): Promise<void> {
   )
 }
 
-export function registerReviewIpc(): void {
+export function registerReviewIpc(options: { onFinished?: ReviewFinishedListener } = {}): void {
+  if (options.onFinished) onFinished = options.onFinished
   history = new HistoryStore(join(app.getPath('userData'), 'history.json'))
 
   ipcMain.handle(IPC.startReview, (event, input) => startReview(event.sender, input))

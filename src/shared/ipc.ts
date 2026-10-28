@@ -12,8 +12,17 @@ export const IPC = {
   getHistory: 'history:get',
   previewPost: 'github:preview',
   post: 'github:post',
+  getSettings: 'settings:get',
+  setAlwaysOnTop: 'settings:set-always-on-top',
+  settingsChanged: 'settings:changed',
+  newReview: 'app:new-review',
   replayFixture: 'dev:replay-fixture'
 } as const
+
+export interface Settings {
+  /** Keep the window above other windows ("pin on top"). */
+  alwaysOnTop: boolean
+}
 
 /** Dev-only fixture replay modes: the full review, markdown only, or a mid-run failure. */
 export type ReplayVariant = 'full' | 'no-findings' | 'error'
@@ -54,6 +63,12 @@ export interface PrHubApi {
   previewPost(reviewId: string, findingIds: string[], mode: PostMode): Promise<PreviewResult>
   /** Submits a preview exactly as shown. Each preview can be posted once. */
   post(previewId: string): Promise<PostResult>
+  getSettings(): Promise<Settings>
+  setAlwaysOnTop(pinned: boolean): Promise<Settings>
+  /** Settings changed elsewhere (e.g. the menu-bar menu); returns an unsubscribe function. */
+  onSettingsChanged(listener: (settings: Settings) => void): () => void
+  /** "New Review" chosen from the menu-bar menu; returns an unsubscribe function. */
+  onNewReview(listener: () => void): () => void
   /** Development builds only: replays fixtures/sample-stream.jsonl as a review. */
   replayFixture(variant: ReplayVariant): Promise<StartReviewResult>
 }

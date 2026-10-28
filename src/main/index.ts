@@ -1,17 +1,26 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Notification, type Tray } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { IPC, type ReviewEventBody, type Settings } from '../shared/ipc'
+import type { ReviewInput } from '../shared/validate'
 import { MIN_SIZE } from './bounds'
 import { registerGithubIpc } from './githubIpc'
 import { registerReviewIpc } from './reviewIpc'
+import { getSettings, updateSettings } from './settings'
+import { createTray } from './tray'
 import { loadWindowBounds, trackWindowBounds } from './windowState'
 
 // Lets tests and experiments run against a throwaway data folder (history, window state, reviews).
 if (process.env.PR_HUB_USER_DATA) app.setPath('userData', process.env.PR_HUB_USER_DATA)
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+let mainWindow: BrowserWindow | null = null
+// Kept referenced: a garbage-collected Tray disappears from the menu bar.
+let tray: Tray | null = null
+let quitting = false
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
     ...loadWindowBounds(),
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
@@ -29,14 +38,24 @@ function createWindow(): void {
     }
   })
 
-  trackWindowBounds(mainWindow)
+  trackWindowBounds(win)
+  applyPinned(win, getSettings().alwaysOnTop)
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  win.on('ready-to-show', () => win.show())
+
+  // Closing hides the window so reviews keep running and the menu-bar icon brings it back.
+  // Quitting (Cmd+Q, tray menu) really closes it.
+  win.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    win.hide()
+  })
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
   })
 
   // Open external links (e.g. PR URLs) in the default browser, never in-app.
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     if (/^https?:\/\//.test(details.url)) shell.openExternal(details.url)
     return { action: 'deny' }
   })
@@ -44,10 +63,65 @@ function createWindow(): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  return win
+}
+
+function showWindow(): BrowserWindow {
+  mainWindow ??= createWindow()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  return mainWindow
+}
+
+function toggleWindow(): void {
+  if (mainWindow?.isVisible() && mainWindow.isFocused()) mainWindow.hide()
+  else showWindow()
+}
+
+function applyPinned(win: BrowserWindow, pinned: boolean): void {
+  // 'floating' keeps it above normal windows without covering menus and alerts.
+  win.setAlwaysOnTop(pinned, 'floating')
+}
+
+function setPinned(pinned: boolean): Settings {
+  const settings = updateSettings({ alwaysOnTop: pinned })
+  if (mainWindow) {
+    applyPinned(mainWindow, pinned)
+    mainWindow.webContents.send(IPC.settingsChanged, settings)
+  }
+  return settings
+}
+
+function isWindowHidden(): boolean {
+  return !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized()
+}
+
+// Reviews take minutes; if the window was put away meanwhile, say when one is done.
+function notifyFinished(input: ReviewInput, event: ReviewEventBody): void {
+  if (!isWindowHidden() || !Notification.isSupported()) return
+  let body: string
+  if (event.type === 'done') {
+    const findings = event.result.findings
+    const blocking = findings?.findings.filter((f) => f.severity === 'blocking').length ?? 0
+    const verdict = findings?.verdict.replaceAll('_', ' ') ?? 'review ready'
+    body = `${verdict[0].toUpperCase()}${verdict.slice(1)}${blocking ? ` · ${blocking} blocking` : ''}`
+  } else if (event.type === 'error') {
+    body = 'Review failed. Open PR Hub for details.'
+  } else {
+    return
+  }
+  const notification = new Notification({ title: input.title, body, silent: false })
+  notification.on('click', () => showWindow())
+  notification.show()
+}
+
+function newReview(): void {
+  showWindow().webContents.send(IPC.newReview)
 }
 
 app.whenReady().then(() => {
@@ -59,14 +133,31 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  registerReviewIpc()
+  registerReviewIpc({ onFinished: notifyFinished })
   registerGithubIpc()
-  createWindow()
+  ipcMain.handle(IPC.getSettings, () => getSettings())
+  ipcMain.handle(IPC.setAlwaysOnTop, (_event, pinned: unknown) => setPinned(pinned === true))
 
-  app.on('activate', function () {
-    // On macOS, re-create the window when the dock icon is clicked and none are open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  mainWindow = createWindow()
+  tray = createTray({
+    isVisible: () => !isWindowHidden(),
+    toggleWindow,
+    isPinned: () => getSettings().alwaysOnTop,
+    setPinned,
+    newReview
   })
+
+  // Dock icon click on macOS: bring the (possibly hidden) window back.
+  app.on('activate', () => showWindow())
+})
+
+app.on('before-quit', () => {
+  quitting = true
+})
+
+app.on('will-quit', () => {
+  tray?.destroy()
+  tray = null
 })
 
 app.on('window-all-closed', () => {

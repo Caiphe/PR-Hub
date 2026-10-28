@@ -1,0 +1,9 @@
+<!-- PR Hub glyph: a branch (left) merging into a target (right). 16x16 grid, stroke-based. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="4" cy="3.5" r="1.75"/>
+  <circle cx="4" cy="12.5" r="1.75"/>
+  <path d="M4 5.25v5.5"/>
+  <circle cx="12" cy="12.5" r="1.75"/>
+  <path d="M12 10.75V7a2.5 2.5 0 0 0-2.5-2.5H7.5"/>
+  <path d="M9.25 2.75 7.5 4.5l1.75 1.75"/>
+</svg>
