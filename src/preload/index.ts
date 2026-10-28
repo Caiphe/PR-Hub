@@ -10,7 +10,8 @@ const api: PrHubApi = {
     const handler = (_event: IpcRendererEvent, payload: ReviewEvent): void => listener(payload)
     ipcRenderer.on(IPC.reviewEvent, handler)
     return () => ipcRenderer.removeListener(IPC.reviewEvent, handler)
-  }
+  },
+  replayFixture: (variant) => ipcRenderer.invoke(IPC.replayFixture, variant)
 }
 
 contextBridge.exposeInMainWorld('api', api)

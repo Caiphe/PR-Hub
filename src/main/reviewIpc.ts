@@ -1,10 +1,12 @@
 import { app, ipcMain, type WebContents } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
-import { IPC, type ReviewEvent, type StartReviewResult } from '../shared/ipc'
+import { IPC, type ReplayVariant, type ReviewEvent, type StartReviewResult } from '../shared/ipc'
 import { parsePrUrl, validateReviewInput, type ReviewInput } from '../shared/validate'
 import { loadSkill, resolveReviewEnvironment, type ReviewEnvironment } from './environment'
+import { replayFixture } from './replay'
 import { runReview, type ReviewHandle } from './reviewRunner'
 
 const running = new Map<string, ReviewHandle>()
@@ -58,8 +60,23 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
   }
 }
 
+const REPLAY_VARIANTS: ReplayVariant[] = ['full', 'no-findings', 'error']
+
+function replay(sender: WebContents, variant: unknown): StartReviewResult {
+  const v = REPLAY_VARIANTS.includes(variant as ReplayVariant) ? (variant as ReplayVariant) : 'full'
+  const reviewId = randomUUID()
+  const handle = replayFixture(join(app.getAppPath(), 'fixtures/sample-stream.jsonl'), v, (body) =>
+    send(sender, { ...body, reviewId })
+  )
+  running.set(reviewId, handle)
+  handle.finished.then(() => running.delete(reviewId))
+  return { ok: true, reviewId }
+}
+
 export function registerReviewIpc(): void {
   ipcMain.handle(IPC.startReview, (event, input) => startReview(event.sender, input))
+  // Fixture replay exists only in development builds; packaged apps never register it.
+  if (is.dev) ipcMain.handle(IPC.replayFixture, (event, variant) => replay(event.sender, variant))
   ipcMain.handle(IPC.cancelReview, (_event, reviewId: unknown) => {
     if (typeof reviewId === 'string') running.get(reviewId)?.cancel()
   })

@@ -68,6 +68,18 @@ export function buildArgs(opts: Pick<RunOptions, 'skill' | 'model'>): string[] {
   ]
 }
 
+export function doneEvent(result: StreamResult): ReviewEventBody {
+  return {
+    type: 'done',
+    result: {
+      ...extractFindings(result.text),
+      costUsd: result.costUsd,
+      durationMs: result.durationMs,
+      deniedTools: result.deniedTools
+    }
+  }
+}
+
 export function runReview(opts: RunOptions): ReviewHandle {
   const { emit, workDir } = opts
   let settled = false
@@ -148,18 +160,7 @@ export function runReview(opts: RunOptions): ReviewHandle {
       const minutes = Math.round((opts.timeoutMs ?? DEFAULT_TIMEOUT_MS) / 60000)
       return settle({ type: 'error', message: `Review timed out after ${minutes} minutes.` })
     }
-    if (result && !result.isError) {
-      const extracted = extractFindings(result.text)
-      return settle({
-        type: 'done',
-        result: {
-          ...extracted,
-          costUsd: result.costUsd,
-          durationMs: result.durationMs,
-          deniedTools: result.deniedTools
-        }
-      })
-    }
+    if (result && !result.isError) return settle(doneEvent(result))
     const detail = result?.text || stderrTail.trim() || `claude exited with code ${code}`
     settle({ type: 'error', message: `Review failed: ${detail.slice(-1000)}` })
   })

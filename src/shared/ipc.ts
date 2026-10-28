@@ -5,8 +5,12 @@ import type { ReviewInput } from './validate'
 export const IPC = {
   startReview: 'review:start',
   cancelReview: 'review:cancel',
-  reviewEvent: 'review:event'
+  reviewEvent: 'review:event',
+  replayFixture: 'dev:replay-fixture'
 } as const
+
+/** Dev-only fixture replay modes: the full review, markdown only, or a mid-run failure. */
+export type ReplayVariant = 'full' | 'no-findings' | 'error'
 
 export type StartReviewResult = { ok: true; reviewId: string } | { ok: false; error: string }
 
@@ -37,4 +41,6 @@ export interface PrHubApi {
   cancelReview(reviewId: string): Promise<void>
   /** Subscribes to review events; returns an unsubscribe function. */
   onReviewEvent(listener: (event: ReviewEvent) => void): () => void
+  /** Development builds only: replays fixtures/sample-stream.jsonl as a review. */
+  replayFixture(variant: ReplayVariant): Promise<StartReviewResult>
 }
