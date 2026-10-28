@@ -1,11 +1,14 @@
 // Typed IPC contract shared by main, preload and renderer. See PLAN.md "IPC contract".
 import type { Findings } from './findings'
+import type { HistoryEntry, HistorySummary } from './history'
 import type { ReviewInput } from './validate'
 
 export const IPC = {
   startReview: 'review:start',
   cancelReview: 'review:cancel',
   reviewEvent: 'review:event',
+  listHistory: 'history:list',
+  getHistory: 'history:get',
   replayFixture: 'dev:replay-fixture'
 } as const
 
@@ -41,6 +44,9 @@ export interface PrHubApi {
   cancelReview(reviewId: string): Promise<void>
   /** Subscribes to review events; returns an unsubscribe function. */
   onReviewEvent(listener: (event: ReviewEvent) => void): () => void
+  /** Finished reviews, newest first. */
+  listHistory(): Promise<HistorySummary[]>
+  getHistory(id: string): Promise<HistoryEntry | null>
   /** Development builds only: replays fixtures/sample-stream.jsonl as a review. */
   replayFixture(variant: ReplayVariant): Promise<StartReviewResult>
 }

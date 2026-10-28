@@ -11,6 +11,8 @@ const api: PrHubApi = {
     ipcRenderer.on(IPC.reviewEvent, handler)
     return () => ipcRenderer.removeListener(IPC.reviewEvent, handler)
   },
+  listHistory: () => ipcRenderer.invoke(IPC.listHistory),
+  getHistory: (id) => ipcRenderer.invoke(IPC.getHistory, id),
   replayFixture: (variant) => ipcRenderer.invoke(IPC.replayFixture, variant)
 }
 

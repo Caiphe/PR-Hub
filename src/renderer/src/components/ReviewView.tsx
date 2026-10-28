@@ -140,6 +140,16 @@ export function ReviewView({ state, onBack, onCancel, onRetry }: Props): React.J
             Cancel
           </button>
         )}
+        {state.phase === 'done' && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={onRetry}
+            title="Review this PR again with the same task"
+          >
+            Re-run
+          </button>
+        )}
       </header>
 
       <div className="review-body" ref={bodyRef}>
@@ -183,6 +193,8 @@ export function ReviewView({ state, onBack, onCancel, onRetry }: Props): React.J
           {formatDuration(result?.durationMs || elapsed)}
           {cost && ` · ${cost}`}
           {state.isReplay && ' · replay'}
+          {state.fromHistory &&
+            ` · ${new Date(state.startedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`}
         </span>
         {result && result.deniedTools.length > 0 && (
           <span className="warn-text" title={result.deniedTools.join('\n')}>

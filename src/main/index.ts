@@ -6,6 +6,9 @@ import { MIN_SIZE } from './bounds'
 import { registerReviewIpc } from './reviewIpc'
 import { loadWindowBounds, trackWindowBounds } from './windowState'
 
+// Lets tests and experiments run against a throwaway data folder (history, window state, reviews).
+if (process.env.PR_HUB_USER_DATA) app.setPath('userData', process.env.PR_HUB_USER_DATA)
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     ...loadWindowBounds(),

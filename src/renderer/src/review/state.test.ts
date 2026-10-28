@@ -70,6 +70,32 @@ describe('reviewReducer', () => {
     expect(s).toMatchObject({ requestId: 2, reviewId: null, phase: 'starting' })
   })
 
+  it('opens a saved review as a finished, read-only state', () => {
+    const s = run(start, {
+      type: 'open',
+      requestId: 2,
+      entry: {
+        id: 'old',
+        input,
+        startedAt: 100,
+        endedAt: 400,
+        status: 'done',
+        result,
+        error: null
+      }
+    })
+    expect(s).toMatchObject({
+      reviewId: 'old',
+      phase: 'done',
+      fromHistory: true,
+      result,
+      startedAt: 100,
+      endedAt: 400
+    })
+    // Stray events for the old id must not change a finished review.
+    expect(reviewReducer(s, ev({ type: 'error', message: 'x' }, 'old'))?.phase).toBe('done')
+  })
+
   it('resets to no review', () => {
     expect(run(start, { type: 'reset' })).toBeNull()
   })

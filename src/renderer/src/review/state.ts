@@ -1,3 +1,4 @@
+import type { HistoryEntry } from '@shared/history'
 import type { ReviewEvent, ReviewResult } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
 
@@ -14,6 +15,8 @@ export interface ReviewState {
   requestId: number
   input: ReviewInput
   isReplay: boolean
+  /** Opened from history: read-only, nothing is running. */
+  fromHistory: boolean
   reviewId: string | null
   phase: Phase
   steps: Step[]
@@ -32,6 +35,7 @@ export type ReviewAction =
   | { type: 'started'; requestId: number; reviewId: string; now: number }
   | { type: 'startFailed'; requestId: number; error: string; now: number }
   | { type: 'event'; event: ReviewEvent; now: number }
+  | { type: 'open'; requestId: number; entry: HistoryEntry }
   | { type: 'reset' }
 
 const TERMINAL: Phase[] = ['done', 'error', 'cancelled']
@@ -69,6 +73,7 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       requestId: action.requestId,
       input: action.input,
       isReplay: action.isReplay ?? false,
+      fromHistory: false,
       reviewId: null,
       phase: 'starting',
       steps: [],
@@ -77,6 +82,24 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       endedAt: null,
       result: null,
       error: null,
+      pending: []
+    }
+  }
+  if (action.type === 'open') {
+    const { entry } = action
+    return {
+      requestId: action.requestId,
+      input: entry.input,
+      isReplay: false,
+      fromHistory: true,
+      reviewId: entry.id,
+      phase: entry.status,
+      steps: [],
+      lastText: null,
+      startedAt: entry.startedAt,
+      endedAt: entry.endedAt,
+      result: entry.result,
+      error: entry.error,
       pending: []
     }
   }

@@ -1,13 +1,8 @@
 import { useState } from 'react'
 import type { Finding, Findings, Requirement } from '@shared/findings'
 import { codeFence, languageForFile } from '../review/format'
+import { VERDICTS } from '../review/verdict'
 import { InlineMarkdown, Markdown } from './Markdown'
-
-const VERDICTS: Record<Findings['verdict'], { label: string; tone: string }> = {
-  approve: { label: 'Approve', tone: 'good' },
-  approve_with_suggestions: { label: 'Approve with suggestions', tone: 'info' },
-  request_changes: { label: 'Request changes', tone: 'bad' }
-}
 
 const REQUIREMENT_STATUS: Record<Requirement['status'], { label: string; tone: string }> = {
   done: { label: 'Done', tone: 'good' },

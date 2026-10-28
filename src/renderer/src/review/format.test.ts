@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { codeFence, formatCost, formatDuration, languageForFile, prLabel } from './format'
+import {
+  codeFence,
+  formatCost,
+  formatDuration,
+  formatRelative,
+  languageForFile,
+  prLabel
+} from './format'
 
 describe('format helpers', () => {
   it('formats durations', () => {
@@ -25,6 +32,16 @@ describe('format helpers', () => {
     expect(languageForFile('index.js')).toBe('javascript')
     expect(languageForFile('Makefile')).toBe('')
     expect(languageForFile(null)).toBe('')
+  })
+
+  it('formats relative times', () => {
+    const now = Date.UTC(2026, 9, 28, 12)
+    expect(formatRelative(now - 20_000, now)).toBe('just now')
+    expect(formatRelative(now - 5 * 60_000, now)).toBe('5m ago')
+    expect(formatRelative(now - 3 * 3_600_000, now)).toBe('3h ago')
+    expect(formatRelative(now - 2 * 86_400_000, now)).toBe('2d ago')
+    expect(formatRelative(now - 30 * 86_400_000, now)).toMatch(/Sep/)
+    expect(formatRelative(now + 5000, now)).toBe('just now')
   })
 
   it('picks a fence longer than any backtick run in the code', () => {

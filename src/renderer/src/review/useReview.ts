@@ -13,6 +13,8 @@ export interface ReviewControls {
   state: ReviewState | null
   start(input: ReviewInput): void
   replay(variant: ReplayVariant): void
+  /** Shows a saved review from history. */
+  open(id: string): Promise<void>
   cancel(): void
   retry(): void
   reset(): void
@@ -57,6 +59,13 @@ export function useReview(): ReviewControls {
     [launch]
   )
 
+  const open = useCallback(async (id: string) => {
+    const requestId = ++requestCounter.current
+    const entry = await window.api.getHistory(id)
+    // Ignore if another review was started while this one loaded.
+    if (entry && requestId === requestCounter.current) dispatch({ type: 'open', requestId, entry })
+  }, [])
+
   const cancel = useCallback(() => {
     if (state?.reviewId && !isTerminal(state.phase)) void window.api.cancelReview(state.reviewId)
   }, [state])
@@ -72,5 +81,5 @@ export function useReview(): ReviewControls {
     dispatch({ type: 'reset' })
   }, [state])
 
-  return { state, start, replay, cancel, retry, reset }
+  return { state, start, replay, open, cancel, retry, reset }
 }

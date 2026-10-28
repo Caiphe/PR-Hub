@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ReplayVariant } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
+import { RecentReviews } from './components/RecentReviews'
 import { ReviewForm } from './components/ReviewForm'
 import { ReviewView } from './components/ReviewView'
 import { useReview } from './review/useReview'
@@ -20,7 +21,11 @@ function App(): React.JSX.Element {
     return (
       <ReviewView
         state={review.state}
-        onBack={review.reset}
+        onBack={() => {
+          // Back from a saved review pre-fills the form with that task, ready to edit or re-run.
+          if (review.state?.fromHistory) setLastInput(review.state.input)
+          review.reset()
+        }}
         onCancel={review.cancel}
         onRetry={review.retry}
       />
@@ -40,6 +45,7 @@ function App(): React.JSX.Element {
           review.start(input)
         }}
       />
+      <RecentReviews onOpen={(id) => void review.open(id)} />
       {import.meta.env.DEV && (
         <p className="dev-tools muted small">
           Dev · replay fixture:{' '}
