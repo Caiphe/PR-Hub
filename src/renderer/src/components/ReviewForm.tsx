@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react'
 import { parsePrUrl, validateReviewInput, type ReviewInput } from '@shared/validate'
+import { FieldIcon, GitHubIcon } from './InterfaceIcons'
 
 interface Props {
   onSubmit: (input: ReviewInput) => void
@@ -55,7 +56,11 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
     onChange: update(field),
     onBlur: touch(field),
     'aria-invalid': Boolean(shownError(field)),
-    'aria-describedby': shownError(field) ? `${id}-${field}-error` : undefined
+    'aria-describedby': shownError(field)
+      ? `${id}-${field}-error`
+      : field === 'prUrl'
+        ? `${id}-prUrl-help`
+        : undefined
   })
 
   const errorText = (field: Field): React.JSX.Element | null =>
@@ -76,7 +81,13 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
       }}
     >
       <div className="field">
-        <label htmlFor={`${id}-title`}>Task title</label>
+        <label htmlFor={`${id}-title`}>
+          <FieldIcon kind="title" />
+          Task title
+          <span className="required-mark" aria-hidden="true">
+            *
+          </span>
+        </label>
         <input
           {...fieldProps('title')}
           type="text"
@@ -87,20 +98,34 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
       </div>
 
       <div className="field">
-        <label htmlFor={`${id}-prUrl`}>PR link</label>
-        <input
-          {...fieldProps('prUrl')}
-          type="url"
-          inputMode="url"
-          placeholder="https://github.com/owner/repo/pull/123"
-          spellCheck={false}
-          autoComplete="off"
-        />
+        <label htmlFor={`${id}-prUrl`}>
+          <FieldIcon kind="link" />
+          PR link
+        </label>
+        <div className="input-with-icon">
+          <GitHubIcon className="input-leading-icon" />
+          <input
+            {...fieldProps('prUrl')}
+            type="url"
+            inputMode="url"
+            placeholder="https://github.com/owner/repo/pull/123"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
         {errorText('prUrl')}
+        {!shownError('prUrl') && (
+          <p className="field-help" id={`${id}-prUrl-help`}>
+            Paste the full GitHub pull request URL.
+          </p>
+        )}
       </div>
 
       <div className="field field-grow">
-        <label htmlFor={`${id}-description`}>Task description</label>
+        <label htmlFor={`${id}-description`}>
+          <FieldIcon kind="description" />
+          Task description
+        </label>
         <textarea
           {...fieldProps('description')}
           placeholder="What should this PR accomplish? Paste the ticket, acceptance criteria, edge cases…"
@@ -109,9 +134,15 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
       </div>
 
       <div className="form-actions">
-        <span className="hint">{isMac ? '⌘' : 'Ctrl'} + Enter</span>
+        <span className="hint">
+          <kbd>{isMac ? '⌘' : 'Ctrl'}</kbd>
+          <span>+</span>
+          <kbd>Enter</kbd>
+        </span>
         <button type="submit" className="primary" disabled={!isValid}>
+          <GitHubIcon className="button-icon" />
           Review PR
+          <span aria-hidden="true">→</span>
         </button>
       </div>
     </form>
