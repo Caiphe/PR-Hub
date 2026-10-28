@@ -13,6 +13,9 @@ const api: PrHubApi = {
   },
   listHistory: () => ipcRenderer.invoke(IPC.listHistory),
   getHistory: (id) => ipcRenderer.invoke(IPC.getHistory, id),
+  previewPost: (reviewId, findingIds, mode) =>
+    ipcRenderer.invoke(IPC.previewPost, reviewId, findingIds, mode),
+  post: (previewId) => ipcRenderer.invoke(IPC.post, previewId),
   replayFixture: (variant) => ipcRenderer.invoke(IPC.replayFixture, variant)
 }
 

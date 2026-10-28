@@ -20,6 +20,8 @@ function App(): React.JSX.Element {
   if (review.state) {
     return (
       <ReviewView
+        // A fresh view per review, so selection and tab state never leak between reviews.
+        key={review.state.requestId}
         state={review.state}
         onBack={() => {
           // Back from a saved review pre-fills the form with that task, ready to edit or re-run.
@@ -28,6 +30,7 @@ function App(): React.JSX.Element {
         }}
         onCancel={review.cancel}
         onRetry={review.retry}
+        onPosted={review.markPosted}
       />
     )
   }

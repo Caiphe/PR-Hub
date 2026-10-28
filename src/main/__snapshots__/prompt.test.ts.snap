@@ -38,12 +38,16 @@ reply, add one fenced \`\`\`json block with this exact shape (no comments, no tr
       "file": "path/relative/to/repo/root or null",
       "line": 42,
       "body": "what is wrong and the concrete failure scenario",
-      "suggestion": "replacement code for that line range, or null"
+      "suggestion": "literal replacement code for that line, or null"
     }
   ]
 }
 \`\`\`
 
 Every issue in the markdown must appear in "findings" with the same severity. "line" is a line
-number in the PR head version of the file, or null if the finding isn't tied to one line."
+number in the PR head version of the file, or null if the finding isn't tied to one line.
+"suggestion" is code only: exactly what line "line" should become after the fix (it may expand
+to several lines). It can be applied to the author's file as-is, so never put instructions or
+prose in it. If the fix isn't a direct replacement of that line, describe it in "body" and set
+"suggestion" to null."
 `;

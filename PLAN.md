@@ -64,6 +64,17 @@ As built in Prompt 3 (`src/main/reviewRunner.ts`); these choices differ from the
 - Cancel = kill the child's process group (claude + bash/git children). Timeout of 15 minutes by default.
 - `PR_HUB_MODEL` overrides the model. `npm run review:cli -- <url> "<title>" "<desc>"` runs the same runner without Electron.
 
+### Posting to GitHub (Prompt 6, `src/main/github*.ts`)
+
+- Two steps. `github:preview` builds the exact payload, caches it, and returns it for display. `github:post` submits only a cached preview, once. The renderer never sends a payload.
+- One `POST /repos/{o}/{r}/pulls/{n}/reviews` via `gh api`, with `event` set to `COMMENT` or `REQUEST_CHANGES`.
+- Inline comments only go on lines that are in the PR diff, computed from the `/files` patches. GitHub rejects the whole review otherwise. Other findings go in the review body, and the dialog says why for each one.
+- Comments are anchored to the head commit the review saw (recorded in history as `headSha`). If the PR has new commits since, every finding goes in the body.
+- ` ```suggestion ` is used only for one-line code. Multi-line fixes go in plain code blocks, because GitHub would replace just one line. Text that looks like prose is never posted as a suggestion (the prompt also forbids it).
+- `@mentions` outside code are neutralized, since review text is partly derived from untrusted PR content.
+- Successful posts are recorded on the history entry (`posted`), and those findings show a "Posted" badge.
+- `PR_HUB_GH` points at a different `gh` binary. The stand-in used for testing serves fixtures and saves POST bodies instead of sending them.
+
 ### IPC contract (`src/shared/ipc.ts`)
 
 - `review:start(input: {title, prUrl, description}) → {reviewId}`

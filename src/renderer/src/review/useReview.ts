@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
+import type { PostRecord } from '@shared/github'
 import type { ReplayVariant, StartReviewResult } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
 import { isTerminal, reviewReducer, type ReviewState } from './state'
@@ -17,6 +18,8 @@ export interface ReviewControls {
   open(id: string): Promise<void>
   cancel(): void
   retry(): void
+  /** Records a successful GitHub post on the current review. */
+  markPosted(record: PostRecord): void
   reset(): void
 }
 
@@ -81,5 +84,7 @@ export function useReview(): ReviewControls {
     dispatch({ type: 'reset' })
   }, [state])
 
-  return { state, start, replay, open, cancel, retry, reset }
+  const markPosted = useCallback((record: PostRecord) => dispatch({ type: 'posted', record }), [])
+
+  return { state, start, replay, open, cancel, retry, reset, markPosted }
 }

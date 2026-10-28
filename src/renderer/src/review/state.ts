@@ -1,3 +1,4 @@
+import type { PostRecord } from '@shared/github'
 import type { HistoryEntry } from '@shared/history'
 import type { ReviewEvent, ReviewResult } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
@@ -17,6 +18,8 @@ export interface ReviewState {
   isReplay: boolean
   /** Opened from history: read-only, nothing is running. */
   fromHistory: boolean
+  /** Reviews posted to GitHub from this result. */
+  posted: PostRecord[]
   reviewId: string | null
   phase: Phase
   steps: Step[]
@@ -36,6 +39,7 @@ export type ReviewAction =
   | { type: 'startFailed'; requestId: number; error: string; now: number }
   | { type: 'event'; event: ReviewEvent; now: number }
   | { type: 'open'; requestId: number; entry: HistoryEntry }
+  | { type: 'posted'; record: PostRecord }
   | { type: 'reset' }
 
 const TERMINAL: Phase[] = ['done', 'error', 'cancelled']
@@ -74,6 +78,7 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       input: action.input,
       isReplay: action.isReplay ?? false,
       fromHistory: false,
+      posted: [],
       reviewId: null,
       phase: 'starting',
       steps: [],
@@ -92,6 +97,7 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       input: entry.input,
       isReplay: false,
       fromHistory: true,
+      posted: entry.posted ?? [],
       reviewId: entry.id,
       phase: entry.status,
       steps: [],
@@ -112,6 +118,8 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       const base: ReviewState = { ...state, reviewId: action.reviewId, pending: [] }
       return mine.reduce((s, e) => applyEvent(s, e, action.now), base)
     }
+    case 'posted':
+      return { ...state, posted: [...state.posted, action.record] }
     case 'startFailed':
       if (action.requestId !== state.requestId) return state
       return { ...state, phase: 'error', error: action.error, endedAt: action.now }

@@ -1,14 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Findings } from '@shared/findings'
+import type { PostRecord } from '@shared/github'
 import { isTerminal, type ReviewState } from '../review/state'
 import { formatCost, formatDuration, prLabel } from '../review/format'
-import { FindingsPanel } from './FindingsPanel'
+import { FindingsPanel, type FindingSelection } from './FindingsPanel'
 import { Markdown } from './Markdown'
+import { PostDialog } from './PostDialog'
 
 interface Props {
   state: ReviewState
   onBack: () => void
   onCancel: () => void
   onRetry: () => void
+  onPosted: (record: PostRecord) => void
+}
+
+// Blocking and should-fix findings that haven't been posted yet; nits are opt-in.
+function defaultSelection(findings: Findings | null, posted: Set<string>): Set<string> {
+  return new Set(
+    (findings?.findings ?? [])
+      .filter((f) => f.severity !== 'nit' && !posted.has(f.id))
+      .map((f) => f.id)
+  )
 }
 
 type Tab = 'findings' | 'markdown'
@@ -49,11 +62,13 @@ function Progress({ state }: { state: ReviewState }): React.JSX.Element {
 function Outcome({
   state,
   tab,
-  setTab
+  setTab,
+  selection
 }: {
   state: ReviewState
   tab: Tab
   setTab: (tab: Tab) => void
+  selection?: FindingSelection
 }): React.JSX.Element | null {
   const result = state.result
   if (!result) return null
@@ -95,7 +110,7 @@ function Outcome({
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === 'findings' ? (
-          <FindingsPanel findings={result.findings} />
+          <FindingsPanel findings={result.findings} selection={selection} />
         ) : (
           <Markdown>{result.markdown}</Markdown>
         )}
@@ -104,7 +119,13 @@ function Outcome({
   )
 }
 
-export function ReviewView({ state, onBack, onCancel, onRetry }: Props): React.JSX.Element {
+export function ReviewView({
+  state,
+  onBack,
+  onCancel,
+  onRetry,
+  onPosted
+}: Props): React.JSX.Element {
   const running = !isTerminal(state.phase)
   const now = useNow(running)
   const elapsed = (state.endedAt ?? now) - state.startedAt
@@ -112,6 +133,30 @@ export function ReviewView({ state, onBack, onCancel, onRetry }: Props): React.J
   const cost = formatCost(result?.costUsd ?? null)
   const [tab, setTab] = useState<Tab>('findings')
   const bodyRef = useRef<HTMLDivElement>(null)
+
+  // Posting needs a saved review with structured findings; fixture replays are never saved.
+  const findings = result?.findings ?? null
+  const canPost = state.phase === 'done' && !!findings && !state.isReplay && !!state.reviewId
+  const postedIds = useMemo(
+    () => new Set(state.posted.flatMap((p) => p.findingIds)),
+    [state.posted]
+  )
+  const [picked, setPicked] = useState<Set<string> | null>(null)
+  const selected = picked ?? defaultSelection(findings, postedIds)
+  // Fixed when the dialog opens so its preview can't change underneath the user.
+  const [dialogIds, setDialogIds] = useState<string[] | null>(null)
+  const selection: FindingSelection | undefined = canPost
+    ? {
+        selected,
+        posted: postedIds,
+        toggle: (id) => {
+          const next = new Set(selected)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          setPicked(next)
+        }
+      }
+    : undefined
 
   // Each phase and tab starts at the top, not wherever the previous content was scrolled.
   useEffect(() => {
@@ -155,7 +200,9 @@ export function ReviewView({ state, onBack, onCancel, onRetry }: Props): React.J
       <div className="review-body" ref={bodyRef}>
         {running && <Progress state={state} />}
 
-        {state.phase === 'done' && <Outcome state={state} tab={tab} setTab={setTab} />}
+        {state.phase === 'done' && (
+          <Outcome state={state} tab={tab} setTab={setTab} selection={selection} />
+        )}
 
         {state.phase === 'error' && (
           <section className="empty-state" role="alert">
@@ -186,6 +233,40 @@ export function ReviewView({ state, onBack, onCancel, onRetry }: Props): React.J
           </section>
         )}
       </div>
+
+      {canPost && tab === 'findings' && findings!.findings.length > 0 && (
+        <div className="post-bar">
+          <span className="muted small">
+            {selected.size} of {findings!.findings.length} selected
+            {postedIds.size > 0 && ` · ${postedIds.size} posted`}
+          </span>
+          <button
+            type="button"
+            className="primary"
+            disabled={selected.size === 0}
+            onClick={() => setDialogIds([...selected])}
+          >
+            Post to GitHub…
+          </button>
+        </div>
+      )}
+
+      {dialogIds && state.reviewId && findings && (
+        <PostDialog
+          reviewId={state.reviewId}
+          prUrl={state.input.prUrl}
+          findings={findings.findings}
+          selectedIds={dialogIds}
+          defaultMode="comment"
+          onClose={() => setDialogIds(null)}
+          onPosted={(record) => {
+            onPosted(record)
+            const next = new Set(selected)
+            record.findingIds.forEach((id) => next.delete(id))
+            setPicked(next)
+          }}
+        />
+      )}
 
       <footer className="review-footer">
         <span>

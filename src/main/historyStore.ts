@@ -96,4 +96,17 @@ export class HistoryStore {
       return removed
     })
   }
+
+  /** Replaces one entry in place (keeping its position); returns the new entry, or null if gone. */
+  update(id: string, change: (entry: HistoryEntry) => HistoryEntry): Promise<HistoryEntry | null> {
+    return this.enqueue(async () => {
+      const current = await this.load()
+      const index = current.findIndex((e) => e.id === id)
+      if (index === -1) return null
+      const updated = change(current[index])
+      this.entries = current.map((e, i) => (i === index ? updated : e))
+      await this.persist()
+      return updated
+    })
+  }
 }

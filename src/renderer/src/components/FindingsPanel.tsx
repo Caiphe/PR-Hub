@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Finding, Findings, Requirement } from '@shared/findings'
-import { codeFence, languageForFile } from '../review/format'
+import { codeFence, languageForFile, looksLikeProse } from '@shared/markdown'
 import { VERDICTS } from '../review/verdict'
 import { InlineMarkdown, Markdown } from './Markdown'
 
@@ -21,43 +21,82 @@ function location(finding: Finding): string | null {
   return finding.line ? `${finding.file}:${finding.line}` : finding.file
 }
 
-function FindingCard({ finding }: { finding: Finding }): React.JSX.Element {
+/** Present when findings can be picked for posting to GitHub. */
+export interface FindingSelection {
+  selected: Set<string>
+  posted: Set<string>
+  toggle: (id: string) => void
+}
+
+function FindingCard({
+  finding,
+  selection
+}: {
+  finding: Finding
+  selection?: FindingSelection
+}): React.JSX.Element {
   // Nits start collapsed; anything that needs action starts open.
   const [open, setOpen] = useState(finding.severity !== 'nit')
   const loc = location(finding)
   const bodyId = `finding-${finding.id}`
+  const posted = selection?.posted.has(finding.id) ?? false
 
   return (
     <article className={`finding-card ${open ? 'is-open' : ''}`}>
-      <button
-        type="button"
-        className="finding-head"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="chevron" aria-hidden="true">
-          ›
-        </span>
-        <span className="finding-title">{finding.title}</span>
-        {loc && <code className="location">{loc}</code>}
-      </button>
+      <div className="finding-row">
+        {selection && (
+          // A sibling of the toggle button: interactive elements can't nest inside a button.
+          <input
+            type="checkbox"
+            className="finding-check"
+            checked={selection.selected.has(finding.id)}
+            onChange={() => selection.toggle(finding.id)}
+            aria-label={`Include "${finding.title}" when posting to GitHub`}
+          />
+        )}
+        <button
+          type="button"
+          className="finding-head"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="chevron" aria-hidden="true">
+            ›
+          </span>
+          <span className="finding-title">{finding.title}</span>
+          {posted && <span className="pill pill-good">Posted</span>}
+          {loc && <code className="location">{loc}</code>}
+        </button>
+      </div>
       {open && (
         <div className="finding-body" id={bodyId}>
           {finding.body && <Markdown>{finding.body}</Markdown>}
-          {finding.suggestion && (
-            <>
-              <div className="suggestion-label">Suggested change</div>
-              <Markdown>{codeFence(finding.suggestion, languageForFile(finding.file))}</Markdown>
-            </>
-          )}
+          {finding.suggestion &&
+            (looksLikeProse(finding.suggestion) ? (
+              <>
+                <div className="suggestion-label">Suggested fix</div>
+                <Markdown>{finding.suggestion}</Markdown>
+              </>
+            ) : (
+              <>
+                <div className="suggestion-label">Suggested change</div>
+                <Markdown>{codeFence(finding.suggestion, languageForFile(finding.file))}</Markdown>
+              </>
+            ))}
         </div>
       )}
     </article>
   )
 }
 
-export function FindingsPanel({ findings }: { findings: Findings }): React.JSX.Element {
+export function FindingsPanel({
+  findings,
+  selection
+}: {
+  findings: Findings
+  selection?: FindingSelection
+}): React.JSX.Element {
   const verdict = VERDICTS[findings.verdict]
   const groups = GROUPS.map((g) => ({
     ...g,
@@ -112,7 +151,7 @@ export function FindingsPanel({ findings }: { findings: Findings }): React.JSX.E
             </h2>
             <div className="finding-list">
               {g.items.map((f) => (
-                <FindingCard key={f.id} finding={f} />
+                <FindingCard key={f.id} finding={f} selection={selection} />
               ))}
             </div>
           </section>

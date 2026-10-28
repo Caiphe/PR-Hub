@@ -1,7 +1,7 @@
 import { app, ipcMain, type WebContents } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
-import { mkdir, readdir, rm } from 'fs/promises'
+import { mkdir, readdir, readFile, rm } from 'fs/promises'
 import { join } from 'path'
 import type { HistoryEntry } from '../shared/history'
 import {
@@ -23,7 +23,11 @@ let history: HistoryStore
 
 const reviewsDir = (): string => join(app.getPath('userData'), 'reviews')
 
-function getEnvironment(): Promise<ReviewEnvironment> {
+export function getHistory(): HistoryStore {
+  return history
+}
+
+export function getEnvironment(): Promise<ReviewEnvironment> {
   // Cached on success only, so installing claude and retrying works without a restart.
   environment ??= resolveReviewEnvironment().catch((error) => {
     environment = null
@@ -41,6 +45,17 @@ const removeDir = (path: string): Promise<void> =>
     console.error(`Failed to remove ${path}`, error)
   )
 
+// The skill's fetch script checks the PR head out as branch "pr". Reading the ref file
+// directly avoids spawning git; packed-refs covers the rare case where git packed it.
+async function readReviewedHead(repoDir: string): Promise<string | undefined> {
+  const isSha = (s: string | undefined): s is string => !!s && /^[0-9a-f]{40}$/.test(s)
+  const loose = (await readFile(join(repoDir, '.git/refs/heads/pr'), 'utf8').catch(() => '')).trim()
+  if (isSha(loose)) return loose
+  const packed = await readFile(join(repoDir, '.git/packed-refs'), 'utf8').catch(() => '')
+  const sha = /^([0-9a-f]{40}) refs\/heads\/pr$/m.exec(packed)?.[1]
+  return isSha(sha) ? sha : undefined
+}
+
 // Called once per review with its terminal event. Saves finished reviews and frees disk:
 // the PR checkout (often the largest thing here) goes right away; stream.jsonl stays
 // for debugging until the entry is trimmed out of history.
@@ -52,6 +67,7 @@ async function finishReview(
 ): Promise<void> {
   const workDir = join(reviewsDir(), reviewId)
   if (event.type === 'cancelled') return removeDir(workDir)
+  const headSha = await readReviewedHead(join(workDir, 'pr/repo'))
   await removeDir(join(workDir, 'pr'))
   if (event.type !== 'done' && event.type !== 'error') return
 
@@ -62,7 +78,8 @@ async function finishReview(
     endedAt: Date.now(),
     status: event.type,
     result: event.type === 'done' ? event.result : null,
-    error: event.type === 'error' ? event.message : null
+    error: event.type === 'error' ? event.message : null,
+    ...(headSha ? { headSha } : {})
   }
   const trimmed = await history.add(entry)
   await Promise.all(trimmed.map((id) => removeDir(join(reviewsDir(), id))))

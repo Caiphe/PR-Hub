@@ -20,7 +20,20 @@ export const HistoryEntrySchema = z.object({
       deniedTools: z.array(z.string())
     })
     .nullable(),
-  error: z.string().nullable()
+  error: z.string().nullable(),
+  /** PR head commit the review saw; lets posting detect new commits since. */
+  headSha: z.string().optional(),
+  /** Reviews posted to GitHub from this entry. */
+  posted: z
+    .array(
+      z.object({
+        at: z.number(),
+        url: z.string(),
+        mode: z.enum(['comment', 'request_changes']),
+        findingIds: z.array(z.string())
+      })
+    )
+    .optional()
 })
 
 export type HistoryEntry = z.infer<typeof HistoryEntrySchema>

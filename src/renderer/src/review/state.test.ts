@@ -96,6 +96,17 @@ describe('reviewReducer', () => {
     expect(reviewReducer(s, ev({ type: 'error', message: 'x' }, 'old'))?.phase).toBe('done')
   })
 
+  it('records GitHub posts on the current review', () => {
+    const record = {
+      at: 1,
+      url: 'https://github.com/a/b/pull/1#r',
+      mode: 'comment' as const,
+      findingIds: ['f1']
+    }
+    const s = run(start, started, ev({ type: 'done', result }), { type: 'posted', record })
+    expect(s?.posted).toEqual([record])
+  })
+
   it('resets to no review', () => {
     expect(run(start, { type: 'reset' })).toBeNull()
   })

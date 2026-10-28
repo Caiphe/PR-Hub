@@ -17,53 +17,6 @@ export function prLabel(url: string): string {
   return ref ? `${ref.owner}/${ref.repo}#${ref.number}` : url
 }
 
-const LANGUAGES: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  py: 'python',
-  rb: 'ruby',
-  go: 'go',
-  rs: 'rust',
-  java: 'java',
-  kt: 'kotlin',
-  swift: 'swift',
-  cs: 'csharp',
-  c: 'c',
-  h: 'c',
-  cpp: 'cpp',
-  php: 'php',
-  css: 'css',
-  scss: 'scss',
-  html: 'xml',
-  xml: 'xml',
-  json: 'json',
-  yml: 'yaml',
-  yaml: 'yaml',
-  md: 'markdown',
-  sh: 'bash',
-  bash: 'bash',
-  sql: 'sql'
-}
-
-/** highlight.js language for a file path, or '' when unknown. */
-export function languageForFile(path: string | null | undefined): string {
-  const ext = path?.split('.').pop()?.toLowerCase()
-  return (ext && LANGUAGES[ext]) || ''
-}
-
-/** Wraps code in a markdown fence long enough that backticks inside can't close it early. */
-export function codeFence(code: string, language = ''): string {
-  const longestRun = Math.max(2, ...(code.match(/`+/g) ?? []).map((run) => run.length))
-  const fence = '`'.repeat(longestRun + 1)
-  return `${fence}${language}\n${code.replace(/\n$/, '')}\n${fence}`
-}
-
 /** "just now", "5m ago", "3h ago", "2d ago", then a short date. */
 export function formatRelative(timestamp: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - timestamp) / 1000))

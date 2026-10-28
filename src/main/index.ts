@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { MIN_SIZE } from './bounds'
+import { registerGithubIpc } from './githubIpc'
 import { registerReviewIpc } from './reviewIpc'
 import { loadWindowBounds, trackWindowBounds } from './windowState'
 
@@ -59,6 +60,7 @@ app.whenReady().then(() => {
   })
 
   registerReviewIpc()
+  registerGithubIpc()
   createWindow()
 
   app.on('activate', function () {

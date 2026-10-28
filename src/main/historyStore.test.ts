@@ -80,6 +80,25 @@ describe('HistoryStore', () => {
     expect((await new HistoryStore(file).list()).map((s) => s.id)).toEqual(['good'])
   })
 
+  it('updates an entry in place and persists it', async () => {
+    const store = new HistoryStore(file)
+    await store.add(entry('a'))
+    await store.add(entry('b'))
+    const record = {
+      at: 5,
+      url: 'https://github.com/a/b/pull/1#r',
+      mode: 'comment' as const,
+      findingIds: ['f1']
+    }
+    const updated = await store.update('a', (e) => ({ ...e, posted: [record] }))
+    expect(updated?.posted).toEqual([record])
+    expect(await store.update('missing', (e) => e)).toBeNull()
+
+    const reloaded = new HistoryStore(file)
+    expect((await reloaded.list()).map((s) => s.id)).toEqual(['b', 'a'])
+    expect((await reloaded.get('a'))?.posted).toEqual([record])
+  })
+
   it('serializes concurrent writes', async () => {
     const store = new HistoryStore(file)
     await Promise.all(['a', 'b', 'c', 'd'].map((id) => store.add(entry(id))))

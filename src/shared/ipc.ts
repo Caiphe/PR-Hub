@@ -1,5 +1,6 @@
 // Typed IPC contract shared by main, preload and renderer. See PLAN.md "IPC contract".
 import type { Findings } from './findings'
+import type { PostMode, PostResult, PreviewResult } from './github'
 import type { HistoryEntry, HistorySummary } from './history'
 import type { ReviewInput } from './validate'
 
@@ -9,6 +10,8 @@ export const IPC = {
   reviewEvent: 'review:event',
   listHistory: 'history:list',
   getHistory: 'history:get',
+  previewPost: 'github:preview',
+  post: 'github:post',
   replayFixture: 'dev:replay-fixture'
 } as const
 
@@ -47,6 +50,10 @@ export interface PrHubApi {
   /** Finished reviews, newest first. */
   listHistory(): Promise<HistorySummary[]>
   getHistory(id: string): Promise<HistoryEntry | null>
+  /** Builds (but doesn't send) the GitHub review for the selected findings of a saved review. */
+  previewPost(reviewId: string, findingIds: string[], mode: PostMode): Promise<PreviewResult>
+  /** Submits a preview exactly as shown. Each preview can be posted once. */
+  post(previewId: string): Promise<PostResult>
   /** Development builds only: replays fixtures/sample-stream.jsonl as a review. */
   replayFixture(variant: ReplayVariant): Promise<StartReviewResult>
 }

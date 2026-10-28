@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  codeFence,
-  formatCost,
-  formatDuration,
-  formatRelative,
-  languageForFile,
-  prLabel
-} from './format'
+import { codeFence, languageForFile } from '@shared/markdown'
+import { formatCost, formatDuration, formatRelative, prLabel } from './format'
 
 describe('format helpers', () => {
   it('formats durations', () => {
