@@ -9,7 +9,10 @@ import type {
   PreviewResult
 } from './github'
 import type { HistoryEntry, HistorySummary } from './history'
+import type { Browser, Settings } from './settings'
 import type { ReviewInput } from './validate'
+
+export type { Settings } from './settings'
 
 export const IPC = {
   startReview: 'review:start',
@@ -28,14 +31,20 @@ export const IPC = {
   inspectIssue: 'github:inspect-issue',
   getSettings: 'settings:get',
   setAlwaysOnTop: 'settings:set-always-on-top',
+  updateSettings: 'settings:update',
+  restoreSettings: 'settings:restore-defaults',
+  browserStatus: 'settings:browsers',
   settingsChanged: 'settings:changed',
   newReview: 'app:new-review',
+  openSettings: 'app:open-settings',
   replayFixture: 'dev:replay-fixture'
 } as const
 
-export interface Settings {
-  /** Keep the window above other windows ("pin on top"). */
-  alwaysOnTop: boolean
+export interface BrowserStatus {
+  /** Best-effort: whether each browser was found in the Applications folders. */
+  installed: Record<Browser, boolean>
+  /** The chosen browser that last failed to open a link (the system browser was used), if any. */
+  lastFallback: Exclude<Browser, 'system'> | null
 }
 
 /** Dev-only fixture replay modes: the full review, markdown only, or a mid-run failure. */
@@ -116,10 +125,16 @@ export interface PrHubApi {
   inspectIssue(issueUrl: string): Promise<InspectIssueResult>
   getSettings(): Promise<Settings>
   setAlwaysOnTop(pinned: boolean): Promise<Settings>
+  /** Validates and saves a change in main; returns the settings in effect (bad values ignored). */
+  updateSettings(change: Partial<Settings>): Promise<Settings>
+  restoreDefaultSettings(): Promise<Settings>
+  browserStatus(): Promise<BrowserStatus>
   /** Settings changed elsewhere (e.g. the menu-bar menu); returns an unsubscribe function. */
   onSettingsChanged(listener: (settings: Settings) => void): () => void
   /** "New Review" chosen from the menu-bar menu; returns an unsubscribe function. */
   onNewReview(listener: () => void): () => void
+  /** "Settings…" chosen from the menu-bar menu; returns an unsubscribe function. */
+  onOpenSettings(listener: () => void): () => void
   /** Development builds only: replays fixtures/sample-stream.jsonl as a review. */
   replayFixture(variant: ReplayVariant): Promise<StartReviewResult>
 }

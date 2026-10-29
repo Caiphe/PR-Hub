@@ -12,6 +12,7 @@ import {
 } from '../review/findingsView'
 import { sessionPrefs } from '../review/sessionPrefs'
 import { dialogOpen } from '../review/keyboard'
+import { useSettings } from '../review/useSettings'
 import { FindingsPanel, type FindingSelection, type FindingsWorkspace } from './FindingsPanel'
 import { Markdown } from './Markdown'
 import { PinButton } from './PinButton'
@@ -168,6 +169,7 @@ export function ReviewView({
   const cost = formatCost(result?.costUsd ?? null)
   const [tab, setTab] = useState<Tab>('findings')
   const bodyRef = useRef<HTMLDivElement>(null)
+  const defaultMode = useSettings()?.defaultPostMode ?? 'comment'
 
   // Posting needs a saved review with structured findings; fixture replays are never saved.
   const findings = result?.findings ?? null
@@ -346,7 +348,7 @@ export function ReviewView({
           prUrl={state.input.prUrl}
           findings={findings.findings}
           selectedIds={dialogIds}
-          defaultMode="comment"
+          defaultMode={defaultMode}
           onClose={() => setDialogIds(null)}
           onPosted={(record) => {
             onPosted(record)

@@ -60,7 +60,7 @@ As built (`src/main/reviewRunner.ts`). Prompt 3 set this up, and the Prompt 7 `/
 - **Environment:** PATH comes from the user's login shell (GUI apps get a minimal one). Nested-session variables (`CLAUDECODE`, `ELECTRON_RUN_AS_NODE`...) are stripped.
 - `cwd` = a fresh work dir per review (`userData/reviews/<id>/`), with the PR in `<id>/pr/` and the raw stream in `<id>/stream.jsonl`.
 - PR title, description, code and commit messages are untrusted data. The skill says so and the prompt repeats it.
-- Cancel and timeout (15 minutes by default) cover both the fetch and the review, and kill each child's whole process group. Quitting the app stops running reviews first.
+- Cancel and timeout (15 minutes by default, 5 to 60 in Settings) cover both the fetch and the review, and kill each child's whole process group. Quitting the app stops running reviews first.
 - `PR_HUB_MODEL` overrides the model. `npm run review:cli -- <url> "<title>" "<desc>"` runs the same runner without Electron.
 
 ### Posting to GitHub (Prompt 6, `src/main/github*.ts`)
@@ -88,7 +88,7 @@ Every handler checks that the call comes from the app's own page (`src/main/ipcG
 - `github:preview(reviewId, findingIds, mode) → PostPreview` · `github:post(previewId, {force?}) → PostRecord | failure` · `github:verify-post(previewId)`: a read-only marker lookup for an unclear submission
 - `github:inspect-pr(prUrl) → PrMetadata` · `github:inspect-issue(issueUrl) → IssueDetails`: read-only intake metadata (`src/main/prInspect.ts`). They use gh when it's signed in and the anonymous public API otherwise, re-validate the link in main, cache answers for 2 minutes, and return a fixed subset of cleaned, size-capped text.
 - `github:status(prUrl?) → ConnectionStatus`: read-only gh check (`--version`, `auth status`, one GET of the PR). Never writes, never returns a token. Preview/post failures carry a classified `problem` with fix-it steps (`src/main/githubErrors.ts`).
-- `settings:get` · `settings:set-always-on-top` · `settings:changed` (main → renderer)
+- `settings:get` · `settings:set-always-on-top` · `settings:update(change)` (validated in main; bad values ignored) · `settings:restore-defaults` · `settings:browsers` · `settings:changed` (main → renderer) · `app:open-settings` (main → renderer)
 - `app:new-review` (main → renderer, from the menu-bar menu)
 - `dev:replay-fixture(variant)` (development builds only)
 

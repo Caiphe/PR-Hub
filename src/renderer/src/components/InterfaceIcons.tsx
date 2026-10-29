@@ -50,3 +50,19 @@ export function GitHubIcon({ className = '' }: IconProps): React.JSX.Element {
     </svg>
   )
 }
+
+export function SettingsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path
+        d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <circle cx="10" cy="4.5" r="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="6" cy="11.5" r="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  )
+}

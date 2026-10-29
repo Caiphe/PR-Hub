@@ -12,12 +12,14 @@ import {
   type ReviewEventBody,
   type StartReviewResult
 } from '../shared/ipc'
+import { reviewRunSettings } from '../shared/settings'
 import { parsePrUrl, TASK_SOURCES, validateReviewInput, type ReviewInput } from '../shared/validate'
 import { loadSkill, resolveReviewEnvironment, type ReviewEnvironment } from './environment'
 import { HistoryStore } from './historyStore'
 import { handle } from './ipcGuard'
 import { replayFixture } from './replay'
 import { runReview, type ReviewHandle } from './reviewRunner'
+import { getSettings } from './settings'
 
 const running = new Map<string, ReviewHandle>()
 let environment: Promise<ReviewEnvironment> | null = null
@@ -115,6 +117,8 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
     const workDir = join(reviewsDir(), reviewId)
     await mkdir(workDir, { recursive: true })
     const startedAt = Date.now()
+    // Read once: a running review keeps the model and timeout it started with.
+    const { model, timeoutMs } = reviewRunSettings(getSettings(), process.env.PR_HUB_MODEL)
 
     const handle = runReview({
       input,
@@ -122,7 +126,8 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
       claudePath: env.claudePath,
       env: env.env,
       skill,
-      model: process.env.PR_HUB_MODEL || undefined,
+      model,
+      timeoutMs,
       emit: (body) => {
         if (body.type !== 'done' && body.type !== 'error' && body.type !== 'cancelled') {
           return send(sender, { ...body, reviewId })
@@ -175,7 +180,11 @@ async function sweepOrphanedReviewDirs(): Promise<void> {
 
 export function registerReviewIpc(options: { onFinished?: ReviewFinishedListener } = {}): void {
   if (options.onFinished) onFinished = options.onFinished
-  history = new HistoryStore(join(app.getPath('userData'), 'history.json'))
+  // The limit is read on each save, so a changed retention setting applies to the next review.
+  history = new HistoryStore(
+    join(app.getPath('userData'), 'history.json'),
+    () => getSettings().historyLimit
+  )
 
   handle(IPC.startReview, (event, input) => startReview(event.sender, input))
   handle(IPC.cancelReview, (_event, reviewId: unknown) => {

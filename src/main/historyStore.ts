@@ -85,8 +85,12 @@ export class HistoryStore {
 
   constructor(
     private readonly file: string,
-    private readonly limit = HISTORY_LIMIT
+    private readonly limit: number | (() => number) = HISTORY_LIMIT
   ) {}
+
+  private get retention(): number {
+    return typeof this.limit === 'function' ? this.limit() : this.limit
+  }
 
   private async load(): Promise<HistoryEntry[]> {
     this.loaded ??= this.readFromDisk()
@@ -168,7 +172,7 @@ export class HistoryStore {
       const current = await this.load()
       const { kept, removed } = applyRetention(
         [entry, ...current.filter((e) => e.id !== entry.id)],
-        this.limit
+        this.retention
       )
       await this.commit(kept)
       removed.forEach((id) => this.extras.delete(id))

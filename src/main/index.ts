@@ -2,15 +2,16 @@ import { app, shell, BrowserWindow, Notification, type Tray } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { IPC, type ReviewEventBody, type Settings } from '../shared/ipc'
+import { IPC, type BrowserStatus, type ReviewEventBody, type Settings } from '../shared/ipc'
 import type { ReviewInput } from '../shared/validate'
 import { MIN_SIZE } from './bounds'
-import { openExternalInFirefox } from './externalBrowser'
+import { installedBrowsers, openExternal } from './externalBrowser'
 import { registerGithubIpc } from './githubIpc'
 import { registerHistoryIpc } from './historyIpc'
 import { handle } from './ipcGuard'
+import { notifyFinished as notify } from './notifications'
 import { cancelAllReviews, hasRunningReviews, registerReviewIpc } from './reviewIpc'
-import { getSettings, updateSettings } from './settings'
+import { getSettings, restoreDefaultSettings, updateSettings } from './settings'
 import { createTray } from './tray'
 import { loadWindowBounds, trackWindowBounds } from './windowState'
 
@@ -26,11 +27,20 @@ let mainWindow: BrowserWindow | null = null
 // Kept referenced: a garbage-collected Tray disappears from the menu bar.
 let tray: Tray | null = null
 let quitting = false
+// The chosen browser that last failed to launch, shown in Settings to explain the fallback.
+let lastBrowserFallback: BrowserStatus['lastFallback'] = null
 
 function openExternalUrl(url: string): void {
-  void openExternalInFirefox(url, (target) => shell.openExternal(target)).catch((error) =>
-    console.error('Failed to open external link', error)
-  )
+  void openExternal(url, getSettings().browser, (target) => shell.openExternal(target))
+    .then((outcome) => {
+      if (outcome.fallbackFrom) {
+        lastBrowserFallback = outcome.fallbackFrom
+        console.error(`Couldn't open ${outcome.fallbackFrom}; used the system browser instead`)
+      } else if (outcome.opened !== 'system') {
+        lastBrowserFallback = null
+      }
+    })
+    .catch((error) => console.error('Failed to open external link', error))
 }
 
 function createWindow(): BrowserWindow {
@@ -68,7 +78,8 @@ function createWindow(): BrowserWindow {
     if (mainWindow === win) mainWindow = null
   })
 
-  // Open external links (e.g. PR URLs) in local Firefox, never in-app.
+  // Open external links (e.g. PR URLs) in the browser chosen in Settings, never in-app.
+  // openExternal validates the URL again before launching anything.
   win.webContents.setWindowOpenHandler((details) => {
     if (/^https?:\/\//.test(details.url)) openExternalUrl(details.url)
     return { action: 'deny' }
@@ -109,40 +120,43 @@ function applyPinned(win: BrowserWindow, pinned: boolean): void {
   win.setAlwaysOnTop(pinned, 'floating')
 }
 
-function setPinned(pinned: boolean): Settings {
-  const settings = updateSettings({ alwaysOnTop: pinned })
+// Every settings change goes through here, so the window and the renderer always agree with
+// what's saved. Settings that only matter for the next review need nothing applied now.
+function changeSettings(next: Settings): Settings {
   if (mainWindow) {
-    applyPinned(mainWindow, pinned)
-    mainWindow.webContents.send(IPC.settingsChanged, settings)
+    applyPinned(mainWindow, next.alwaysOnTop)
+    mainWindow.webContents.send(IPC.settingsChanged, next)
   }
-  return settings
+  return next
+}
+
+function setPinned(pinned: boolean): Settings {
+  return changeSettings(updateSettings({ alwaysOnTop: pinned }))
 }
 
 function isWindowHidden(): boolean {
   return !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized()
 }
 
-// Reviews take minutes; if the window was put away meanwhile, say when one is done.
 function notifyFinished(input: ReviewInput, event: ReviewEventBody): void {
-  if (!isWindowHidden() || !Notification.isSupported()) return
-  let body: string
-  if (event.type === 'done') {
-    const findings = event.result.findings
-    const blocking = findings?.findings.filter((f) => f.severity === 'blocking').length ?? 0
-    const verdict = findings?.verdict.replaceAll('_', ' ') ?? 'review ready'
-    body = `${verdict[0].toUpperCase()}${verdict.slice(1)}${blocking ? ` · ${blocking} blocking` : ''}`
-  } else if (event.type === 'error') {
-    body = 'Review failed. Open PR Hub for details.'
-  } else {
-    return
-  }
-  const notification = new Notification({ title: input.title, body, silent: false })
-  notification.on('click', () => showWindow())
-  notification.show()
+  notify(input, event, {
+    enabled: getSettings().notifications,
+    windowHidden: isWindowHidden(),
+    supported: Notification.isSupported(),
+    show: ({ title, body }) => {
+      const notification = new Notification({ title, body, silent: false })
+      notification.on('click', () => showWindow())
+      notification.show()
+    }
+  })
 }
 
 function newReview(): void {
   showWindow().webContents.send(IPC.newReview)
+}
+
+function openSettings(): void {
+  showWindow().webContents.send(IPC.openSettings)
 }
 
 app.on('second-instance', () => showWindow())
@@ -162,6 +176,12 @@ app.whenReady().then(() => {
   registerHistoryIpc()
   handle(IPC.getSettings, () => getSettings())
   handle(IPC.setAlwaysOnTop, (_event, pinned) => setPinned(pinned === true))
+  handle(IPC.updateSettings, (_event, change) => changeSettings(updateSettings(change)))
+  handle(IPC.restoreSettings, () => changeSettings(restoreDefaultSettings()))
+  handle(IPC.browserStatus, (): BrowserStatus => ({
+    installed: installedBrowsers(),
+    lastFallback: lastBrowserFallback
+  }))
 
   mainWindow = createWindow()
   tray = createTray({
@@ -169,7 +189,10 @@ app.whenReady().then(() => {
     toggleWindow,
     isPinned: () => getSettings().alwaysOnTop,
     setPinned,
-    newReview
+    notificationsOn: () => getSettings().notifications,
+    setNotifications: (on) => changeSettings(updateSettings({ notifications: on })),
+    newReview,
+    openSettings
   })
 
   // Dock icon click on macOS: bring the (possibly hidden) window back.

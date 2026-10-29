@@ -6,7 +6,8 @@ import { PinButton } from './components/PinButton'
 import { RecentReviews } from './components/RecentReviews'
 import { ReviewForm } from './components/ReviewForm'
 import { ReviewView } from './components/ReviewView'
-import { BrandMark } from './components/InterfaceIcons'
+import { BrandMark, SettingsIcon } from './components/InterfaceIcons'
+import { SettingsView } from './components/SettingsView'
 import { dialogOpen } from './review/keyboard'
 import { isTerminal } from './review/state'
 import { useReview } from './review/useReview'
@@ -25,6 +26,8 @@ function App(): React.JSX.Element {
   const [formKey, setFormKey] = useState(0)
   // The History view replaces the form; a review opened from it returns there on back.
   const [view, setView] = useState<'form' | 'history'>('form')
+  // Settings opens over whatever is showing (even a running review) and Back returns to it.
+  const [showSettings, setShowSettings] = useState(false)
 
   const newReview = (): void => {
     const state = review.state
@@ -37,6 +40,7 @@ function App(): React.JSX.Element {
       return
     }
     review.reset()
+    setShowSettings(false)
     setView('form')
     setLastInput(undefined)
     setFormKey((k) => k + 1)
@@ -56,11 +60,15 @@ function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     const unsubscribe = window.api.onNewReview(() => newReviewRef.current())
+    const unsubscribeSettings = window.api.onOpenSettings(() => setShowSettings(true))
     return () => {
       window.removeEventListener('keydown', onKey)
       unsubscribe()
+      unsubscribeSettings()
     }
   }, [])
+
+  if (showSettings) return <SettingsView onBack={() => setShowSettings(false)} />
 
   if (review.state) {
     return (
@@ -95,7 +103,18 @@ function App(): React.JSX.Element {
             <p className="muted">Review a pull request against its task.</p>
           </div>
         </div>
-        <PinButton />
+        <div className="header-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => setShowSettings(true)}
+          >
+            <SettingsIcon />
+          </button>
+          <PinButton />
+        </div>
       </header>
       <ReviewForm
         key={formKey}

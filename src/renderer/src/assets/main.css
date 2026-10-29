@@ -2751,6 +2751,153 @@ button.danger-button:hover:not(:disabled) {
   border-color: rgba(255, 111, 125, 0.5);
 }
 
+/* Settings view */
+
+.header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.header-actions .icon-button:not(.pin-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(10, 18, 35, 0.58);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.setting-group .section-title {
+  margin: 0;
+  color: var(--text);
+}
+
+.setting-group p {
+  margin: 0;
+}
+
+.setting-choice {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setting-choice legend {
+  margin: 0 0 5px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.setting-choice .segmented {
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.setting-field > label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.setting-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-input input {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
+.setting-input input[inputmode='numeric'] {
+  flex: 0 0 90px;
+}
+
+.setting-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.setting-check input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 1px 0 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.setting-check input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.setting-warning {
+  color: var(--warn);
+}
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.restore-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.restore-change {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 10px;
+}
+
+.restore-change dt {
+  color: var(--muted);
+}
+
+.restore-change dd {
+  margin: 0;
+}
+
 @media (max-width: 410px), (max-height: 590px) {
   .field + .task-source,
   .task-source + .field {
