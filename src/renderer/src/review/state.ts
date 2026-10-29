@@ -1,6 +1,7 @@
 import type { PostRecord } from '@shared/github'
 import type { HistoryEntry } from '@shared/history'
-import type { ReviewEvent, ReviewResult } from '@shared/ipc'
+import type { Override } from '@shared/incremental'
+import type { IncrementalOutcome, ReviewEvent, ReviewResult, StartReviewOptions } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
 
 export type Phase = 'starting' | 'running' | 'done' | 'error' | 'cancelled'
@@ -15,6 +16,8 @@ export interface ReviewState {
   /** Increments per start, so a slow reply from an abandoned start can't hijack a newer one. */
   requestId: number
   input: ReviewInput
+  /** What the review was started with, so Retry repeats the same request. */
+  options: StartReviewOptions
   isReplay: boolean
   /** Opened from history: read-only, nothing is running. */
   fromHistory: boolean
@@ -22,6 +25,10 @@ export interface ReviewState {
   posted: PostRecord[]
   /** The PR commit that was reviewed, when known; used to link findings to GitHub. */
   headSha: string | null
+  /** Set when this review was asked to compare against a previous one. */
+  incremental: IncrementalOutcome | null
+  /** Local decisions on uncertain comparison items. */
+  overrides: Record<string, Override>
   reviewId: string | null
   phase: Phase
   steps: Step[]
@@ -36,12 +43,20 @@ export interface ReviewState {
 }
 
 export type ReviewAction =
-  | { type: 'start'; requestId: number; input: ReviewInput; isReplay?: boolean; now: number }
+  | {
+      type: 'start'
+      requestId: number
+      input: ReviewInput
+      options?: StartReviewOptions
+      isReplay?: boolean
+      now: number
+    }
   | { type: 'started'; requestId: number; reviewId: string; now: number }
   | { type: 'startFailed'; requestId: number; error: string; now: number }
   | { type: 'event'; event: ReviewEvent; now: number }
   | { type: 'open'; requestId: number; entry: HistoryEntry }
   | { type: 'posted'; record: PostRecord }
+  | { type: 'overrides'; overrides: Record<string, Override> }
   | { type: 'reset' }
 
 const TERMINAL: Phase[] = ['done', 'error', 'cancelled']
@@ -69,6 +84,7 @@ function applyEvent(state: ReviewState, event: ReviewEvent, now: number): Review
         phase: 'done',
         result: event.result,
         headSha: event.headSha ?? null,
+        incremental: event.incremental ?? null,
         endedAt: now
       }
     case 'error':
@@ -84,10 +100,13 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
     return {
       requestId: action.requestId,
       input: action.input,
+      options: action.options ?? {},
       isReplay: action.isReplay ?? false,
       fromHistory: false,
       posted: [],
       headSha: null,
+      incremental: null,
+      overrides: {},
       reviewId: null,
       phase: 'starting',
       steps: [],
@@ -104,10 +123,27 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
     return {
       requestId: action.requestId,
       input: entry.input,
+      options: entry.incremental ? { incrementalFrom: entry.incremental.parentId } : {},
       isReplay: false,
       fromHistory: true,
       posted: entry.posted ?? [],
       headSha: entry.headSha ?? null,
+      incremental: entry.incremental
+        ? {
+            parentId: entry.incremental.parentId,
+            comparedSha: entry.incremental.comparedSha,
+            comparison: entry.incremental.comparison,
+            fallbackReason: null
+          }
+        : entry.fallbackReason
+          ? {
+              parentId: '',
+              comparedSha: null,
+              comparison: null,
+              fallbackReason: entry.fallbackReason
+            }
+          : null,
+      overrides: entry.overrides ?? {},
       reviewId: entry.id,
       phase: entry.status,
       steps: [],
@@ -132,6 +168,8 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       const base: ReviewState = { ...state, reviewId: action.reviewId, pending: [] }
       return mine.reduce((s, e) => applyEvent(s, e, action.now), base)
     }
+    case 'overrides':
+      return { ...state, overrides: action.overrides }
     case 'posted': {
       // A recovered or repeated confirmation of the same submission is recorded once.
       const id = action.record.submissionId

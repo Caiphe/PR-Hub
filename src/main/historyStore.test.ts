@@ -141,10 +141,62 @@ describe('HistoryStore migration', () => {
     await store.setPinned('no-findings-block', true)
     const saved = JSON.parse(await readFile(file, 'utf8'))
     const before = JSON.parse(original).entries
-    expect(saved.version).toBe(2)
+    expect(saved.version).toBe(FILE_VERSION)
     expect(saved.entries).toEqual(
       before.map((e: { id: string }) => (e.id === 'no-findings-block' ? { ...e, pinned: true } : e))
     )
+  })
+
+  it('keeps incremental lineage, fallbacks and overrides (version 3)', async () => {
+    const item = {
+      key: 'prev:f1',
+      status: 'unable_to_verify',
+      previous: { id: 'f1', title: 'T', severity: 'nit', file: null, line: null },
+      currentId: null,
+      suggestedId: null,
+      previousPosted: false,
+      evidence: {
+        model: null,
+        location: { kind: 'no_location', from: null, to: null },
+        similarity: null,
+        reason: 'r'
+      }
+    }
+    const child = entry('child', {
+      incremental: {
+        parentId: 'a',
+        comparedSha: 'c'.repeat(40),
+        comparison: {
+          parentId: 'a',
+          comparedSha: 'c'.repeat(40),
+          previousVerdict: 'approve',
+          modelCompared: true,
+          items: [item as never]
+        }
+      },
+      overrides: { 'prev:f1': 'resolved' }
+    })
+    const fellBack = entry('fell-back', { fallbackReason: 'rebased' })
+    const store = new HistoryStore(file)
+    await store.add(entry('a'))
+    await store.add(child)
+    await store.add(fellBack)
+    const reloaded = new HistoryStore(file)
+    expect(await reloaded.get('child')).toEqual(child)
+    expect((await reloaded.list()).map((s) => [s.id, s.incremental, s.fallbackReason])).toEqual([
+      ['fell-back', null, 'rebased'],
+      [
+        'child',
+        {
+          parentId: 'a',
+          comparedSha: 'c'.repeat(40),
+          counts: { new: 0, still_present: 0, resolved: 1, unable_to_verify: 0 }
+        },
+        null
+      ],
+      ['a', null, null]
+    ])
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(3)
   })
 
   it('reads a file without a version and a bare entries array', () => {

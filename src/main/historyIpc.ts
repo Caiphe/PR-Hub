@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
 import { rm, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
-import type { HistorySummary } from '../shared/history'
+import type { HistoryEntry, HistorySummary } from '../shared/history'
+import { overrideChoices, type Override } from '../shared/incremental'
 import { summarize } from '../shared/history'
 import {
   IPC,
@@ -27,6 +28,29 @@ export async function setPinned(id: unknown, pinned: unknown): Promise<HistorySu
   if (!isId(id)) return null
   const entry = await getHistory().setPinned(id, pinned === true)
   return entry ? summarize(entry) : null
+}
+
+/**
+ * Settles an uncertain comparison item locally, or clears it (value null). Only uncertain
+ * items accept an override, and only the values their side allows. Never touches GitHub.
+ */
+export async function setOverride(
+  id: unknown,
+  key: unknown,
+  value: unknown
+): Promise<HistoryEntry | null> {
+  if (!isId(id) || typeof key !== 'string') return null
+  return getHistory().update(id, (entry) => {
+    const item = entry.incremental?.comparison?.items.find((i) => i.key === key)
+    if (!item) return entry
+    const overrides = { ...entry.overrides }
+    if (value === null) delete overrides[key]
+    else if (overrideChoices(item).includes(value as Override)) overrides[key] = value as Override
+    else return entry
+    const next: HistoryEntry = { ...entry, overrides }
+    if (Object.keys(overrides).length === 0) next.overrides = undefined
+    return next
+  })
 }
 
 export async function deleteReview(sender: WebContents, id: unknown): Promise<DeleteHistoryResult> {
@@ -94,6 +118,7 @@ export async function exportReview(
 
 export function registerHistoryIpc(): void {
   handle(IPC.setHistoryPinned, (_e, id, pinned) => setPinned(id, pinned))
+  handle(IPC.setOverride, (_e, id, key, value) => setOverride(id, key, value))
   handle(IPC.deleteHistory, (e, id) => deleteReview(e.sender, id))
   handle(IPC.exportHistory, (e, id, format) => exportReview(e.sender, id, format))
 }

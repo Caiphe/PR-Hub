@@ -12,7 +12,8 @@ import type {
 } from '../shared/github'
 import { submissionMarker } from '../shared/github'
 import type { HistoryEntry } from '../shared/history'
-import { IPC } from '../shared/ipc'
+import { chooseParent, currentLifecycle, OFFER_MESSAGES, offerReason } from '../shared/incremental'
+import { IPC, type IncrementalOffer } from '../shared/ipc'
 import { parseIssueUrl, parsePrUrl, type PrRef } from '../shared/validate'
 import { resolveChildEnv } from './environment'
 import { classifyGhFailure, postFailureKind, type GhOperation } from './githubErrors'
@@ -28,7 +29,7 @@ import {
   submitReview
 } from './githubPoster'
 import { buildReview, commentableMap, type ReviewPayload } from './githubReview'
-import { inspectIssue, inspectPr } from './prInspect'
+import { compareCommits, inspectIssue, inspectPr } from './prInspect'
 import { handle } from './ipcGuard'
 import { getEnvironment, getHistory } from './reviewIpc'
 
@@ -110,6 +111,52 @@ async function inspectPrHandler(prUrl: unknown): Promise<InspectPrResult> {
   if (!ref) return { ok: false, error: 'Not a GitHub pull request link.' }
   const env = await githubEnv()
   return inspectPr(ref, { gh: await findGh(env), env })
+}
+
+async function incrementalOfferHandler(
+  prUrl: unknown,
+  parentId: unknown
+): Promise<IncrementalOffer> {
+  const none: IncrementalOffer = {
+    parent: null,
+    headSha: null,
+    available: false,
+    reason: null,
+    message: null
+  }
+  const ref = typeof prUrl === 'string' ? parsePrUrl(prUrl) : null
+  if (!ref) return none
+  const summary = chooseParent(
+    await getHistory().list(),
+    ref.url,
+    typeof parentId === 'string' ? parentId : undefined
+  )
+  if (!summary) return none
+  const parent: IncrementalOffer['parent'] = {
+    id: summary.id,
+    title: summary.title,
+    startedAt: summary.startedAt,
+    headSha: summary.headSha,
+    verdict: summary.verdict,
+    counts: summary.counts,
+    lifecycle: summary.incremental?.counts ?? null
+  }
+  const env = await githubEnv()
+  const deps = { gh: await findGh(env), env }
+  const pr = await inspectPr(ref, deps)
+  const headSha = pr.ok ? pr.pr.headSha : null
+  const compare =
+    headSha && summary.headSha && headSha !== summary.headSha
+      ? await compareCommits(ref, summary.headSha, headSha, deps)
+      : null
+  const reason = offerReason(summary, headSha, compare)
+  return {
+    parent,
+    headSha,
+    available: reason === null,
+    reason,
+    message: reason ? OFFER_MESSAGES[reason] : null
+  }
 }
 
 async function inspectIssueHandler(issueUrl: unknown): Promise<InspectIssueResult> {
@@ -194,6 +241,18 @@ async function preview(
           ? `The PR has new commits since this review ran. ${moved} finding(s) in files that changed since then moved to the review body; findings in unchanged files stay on their lines.`
           : 'The PR has new commits since this review ran, but none of them touch the files with inline comments, so the comments stay on their lines.'
       )
+    }
+    // After an incremental review, a still-present finding may continue one already posted
+    // from the earlier review. Allowed when ticked explicitly, but said out loud.
+    const comparison = entry.incremental?.comparison
+    if (comparison) {
+      const lifecycle = currentLifecycle(comparison, entry.overrides)
+      const reposts = ids.filter((id) => lifecycle.get(id)?.previouslyPosted).length
+      if (reposts > 0) {
+        warnings.push(
+          `${reposts} selected finding${reposts === 1 ? '' : 's'} continue${reposts === 1 ? 's' : ''} one already posted from an earlier review of this PR. Posting again repeats it on GitHub.`
+        )
+      }
     }
     const already = new Set((entry.posted ?? []).flatMap((p) => p.findingIds))
     if (ids.some((id) => already.has(id))) {
@@ -404,4 +463,5 @@ export function registerGithubIpc(): void {
   handle(IPC.githubStatus, (_e, prUrl) => status(prUrl))
   handle(IPC.inspectPr, (_e, prUrl) => inspectPrHandler(prUrl))
   handle(IPC.inspectIssue, (_e, issueUrl) => inspectIssueHandler(issueUrl))
+  handle(IPC.incrementalOffer, (_e, prUrl, parentId) => incrementalOfferHandler(prUrl, parentId))
 }

@@ -79,6 +79,25 @@ How the task is filled in:
 
 The footer shows how long the review took and what it cost. If the reviewer tried something it isn't allowed to do, the footer also says how many tool calls were blocked; hover over it for details.
 
+### Re-review after new commits
+
+When you paste a link to a PR you've reviewed before, the form shows **Previously reviewed**: when, at which commit, the verdict and the counts. Choose:
+
+- **Review changes since abc1234**: reviews only what changed since then, and compares the findings with the earlier review.
+- **Full re-review**: reviews the whole PR again from scratch.
+
+The first is offered only when GitHub confirms the PR just gained commits on top of the reviewed one. It's disabled, with the reason, when the PR was force-pushed or rebased, has no new commits, or the earlier review didn't record its commit or has no structured findings. After fetching, PR Hub checks the same thing locally. If the earlier commit isn't part of the PR any more, the review runs as a full one and says why at the top of the result. **Re-run** on a saved review offers the same two choices, using that review as the starting point.
+
+An incremental review still looks at the whole PR for regressions, but focuses on the new commits. Its result has a **Changes** tab:
+
+- the earlier and new commits, and how the verdict changed;
+- counts of **New**, **Still present**, **Resolved** and **Unable to verify** findings;
+- for each, the evidence: what the review said, whether the code at that spot was edited (and where the line is now), and how similar the wording is.
+
+A finding is only called Still present or Resolved when PR Hub's own comparison of the two commits agrees with the reviewer. Anything that doesn't add up is **Unable to verify**: open it and choose what it is. That decision stays on this Mac.
+
+When posting, only **New** findings are ticked. Still-present ones can be ticked by hand; if one continues a finding you already posted, it's badged **Posted earlier** and the preview warns before you post it again. Resolved findings can't be posted.
+
 ### Findings workspace
 
 - **Severity chips** in the summary (Blocking, Should fix, Nits) show the counts. Click one or more to show only those severities.
@@ -244,6 +263,7 @@ Closing the window hides it; a running review keeps going. Quit from the menu-ba
 ````
 Form ──IPC──▶ main process
                1. bash <skill>/scripts/fetch_pr.sh <validated URL> <work dir>/pr
+                  (incremental: git checks the earlier commit and writes the changes since)
                2. claude -p (stream-json) with the skill as system prompt
                     reads pr.diff, files.txt, commits.txt and the checkout in <work dir>
                3. parse events → progress in the window
@@ -255,6 +275,7 @@ Window ◀── review:event ──┘
 - **The app fetches the PR itself,** using the skill's fetch script. It passes the validated PR URL and a fixed destination as an argument list (no shell), so paths with spaces are safe and the model never picks arguments. If the fetch fails (private repo without `gh auth login`, wrong link, no network), the review stops before any model cost.
 - **Skill loading:** headless `claude -p` doesn't load claude.ai-synced skills. So the app reads `SKILL.md`, fills in its folder path, and passes it with `--append-system-prompt`.
 - **Structured output:** the prompt asks the reviewer to end with a JSON block: verdict, summary, requirements, and findings with `id`, `severity`, `file`, `line`, `body` and `suggestion`. If that block is missing or invalid, the app shows the written review with a notice and never crashes.
+- **Incremental re-reviews:** PR Hub runs `git` itself after the fetch (argument lists, commit ids checked to be 40 hex characters): it confirms the earlier commit is an ancestor of the new head, then writes the diff since then, limited to the PR's files. The earlier findings go to the reviewer as data, with the same untrusted-content warning as the PR itself. See [PLAN.md](PLAN.md) "Incremental re-reviews" for the matching rules.
 - **Cancel and timeout:** both cover the fetch and the review, and kill each process group (`claude` plus anything it started). The timeout is 15 minutes by default (Settings, 5 to 60).
 
 [PLAN.md](PLAN.md) has the full design, the IPC contract and the reasoning behind each choice. [PROMPTS.md](PROMPTS.md) has the step-by-step build prompts the app was developed from.
@@ -290,13 +311,13 @@ claude -p --tools "Read Grep Glob Bash" --permission-mode dontAsk   (no allow ru
 
 Everything lives in `~/Library/Application Support/PR Hub/`:
 
-| Path                        | Contents                                                                                                                            |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `history.json`              | Finished reviews: the newest 50 unpinned plus every pinned one. Task, written review, findings, cost, reviewed commit, post records |
-| `reviews/<id>/stream.jsonl` | The raw Claude Code event stream, for debugging. Deleted when the review drops out of history or is deleted. Never exported.        |
-| `reviews/<id>/pr/`          | The PR checkout, only while a review is running. Deleted when it ends.                                                              |
-| `settings.json`             | Settings (`version: 2`); invalid or unknown values become safe defaults when read                                                   |
-| `window-state.json`         | Window size and position                                                                                                            |
+| Path                        | Contents                                                                                                                                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `history.json`              | Finished reviews (`version: 3`): the newest 50 unpinned plus every pinned one. Task, written review, findings, cost, reviewed commit, post records; for incremental reviews also the review compared against, the comparison and your decisions on uncertain items |
+| `reviews/<id>/stream.jsonl` | The raw Claude Code event stream, for debugging. Deleted when the review drops out of history or is deleted. Never exported.                                                                                                                                       |
+| `reviews/<id>/pr/`          | The PR checkout, only while a review is running. Deleted when it ends.                                                                                                                                                                                             |
+| `settings.json`             | Settings (`version: 2`); invalid or unknown values become safe defaults when read                                                                                                                                                                                  |
+| `window-state.json`         | Window size and position                                                                                                                                                                                                                                           |
 
 To remove one review, use **Delete…** in History. To clear everything, quit the app and delete that folder.
 
@@ -317,7 +338,7 @@ npm run format       # prettier
 
 ### Working on the review screen without paying for reviews
 
-In development builds the form has **Dev · replay fixture** links: _full_, _no findings_ and _error_. They replay [fixtures/sample-stream.jsonl](fixtures/sample-stream.jsonl), a real recorded review, through the same parser as a live run. Replays aren't saved to history and can't be posted. The links and the replay handler don't exist in packaged builds.
+In development builds the form has **Dev · replay fixture** links: _full_, _no findings_, _error_, _incremental_ and _fallback_. _incremental_ adds a comparison with a made-up earlier review ([fixtures/incremental-replay.json](fixtures/incremental-replay.json)); _fallback_ shows an incremental request that had to run as a full review. They replay [fixtures/sample-stream.jsonl](fixtures/sample-stream.jsonl), a real recorded review, through the same parser as a live run. Replays aren't saved to history and can't be posted. The links and the replay handler don't exist in packaged builds.
 
 ### Running a review from the terminal
 
@@ -380,7 +401,8 @@ src/
     environment.ts          login-shell PATH, finding claude, finding the skill
     reviewIpc.ts            review and history IPC, saving finished reviews, folder cleanup
     historyStore.ts         history.json: versioned, tolerant reads, crash-safe writes, pinned-aware retention
-    historyIpc.ts           pin, delete (with confirmation) and export (save panel) for saved reviews
+    historyIpc.ts           pin, delete (with confirmation), export (save panel) and comparison overrides
+    incremental.ts          incremental re-reviews: git checks after the fetch, the diff since, fallbacks
     historyExport.ts        one review → Markdown or the documented JSON export, redacted
     githubReview.ts         findings → GitHub review payload (diff lines, suggestions, sanitizing)
     githubPoster.ts         gh CLI: auth status, PR head/files, compare, review lookup, submit
@@ -399,7 +421,8 @@ src/
     review/                 reducer (state.ts), useReview hook, intake rules, formatting helpers
   shared/                   types and pure code used by both sides
     ipc.ts                  IPC channels and API types (source of truth)
-    findings.ts history.ts github.ts validate.ts markdown.ts
+    incremental.ts          diff line mapping, finding matching, lifecycle counts, offers
+    findings.ts history.ts github.ts validate.ts markdown.ts settings.ts
 scripts/                    review-cli.ts, render-icons.mjs
 fixtures/                   recorded review stream, GitHub API responses, history file shapes
 ```
@@ -483,4 +506,5 @@ The PR changed after the preview was built, so a comment's line is no longer in 
 - **One-line suggestions only.** Multi-line suggested fixes are posted as plain code, not one-click suggestions.
 - **The skill is picked by date.** If several `pr-review` folders exist under `~/.claude/skills`, the most recently changed one is used; set `PR_HUB_SKILL_DIR` to pin one.
 - **If the app crashes mid-review,** the `claude` process isn't stopped (quitting normally does stop it).
+- **Incremental reviews need the earlier commit.** After a force-push or rebase, or when the earlier review didn't record its commit, only a full review is possible. Line mapping follows edits and renames, but code moved to another file reads as removed and added, so its finding may show as Unable to verify.
 - **Unclear posts are tracked only while the app runs.** If you quit while a post's outcome is unclear, PR Hub forgets that submission; check the PR before posting again.

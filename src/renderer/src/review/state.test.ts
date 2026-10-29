@@ -154,3 +154,69 @@ describe('reviewReducer', () => {
     expect(run(start, { type: 'reset' })).toBeNull()
   })
 })
+
+describe('incremental state', () => {
+  const comparison = {
+    parentId: 'r0',
+    comparedSha: 'c'.repeat(40),
+    previousVerdict: 'approve',
+    modelCompared: true,
+    items: []
+  }
+
+  it('keeps the start options for Retry and the outcome from the done event', () => {
+    let s = reviewReducer(null, {
+      type: 'start',
+      requestId: 1,
+      input,
+      options: { incrementalFrom: 'r0' },
+      now: 1
+    })!
+    expect(s.options).toEqual({ incrementalFrom: 'r0' })
+    s = reviewReducer(s, { type: 'started', requestId: 1, reviewId: 'r1', now: 2 })!
+    s = reviewReducer(s, {
+      type: 'event',
+      now: 3,
+      event: {
+        reviewId: 'r1',
+        type: 'done',
+        result: { markdown: '', findings: null, costUsd: null, durationMs: 1, deniedTools: [] },
+        incremental: {
+          parentId: 'r0',
+          comparedSha: 'c'.repeat(40),
+          comparison,
+          fallbackReason: null
+        }
+      }
+    })!
+    expect(s.incremental?.comparison).toEqual(comparison)
+    s = reviewReducer(s, { type: 'overrides', overrides: { 'prev:x': 'resolved' } })!
+    expect(s.overrides).toEqual({ 'prev:x': 'resolved' })
+  })
+
+  it('opens saved incremental reviews, fallbacks and old full reviews', () => {
+    const saved = {
+      id: 'r1',
+      input,
+      startedAt: 1,
+      endedAt: 2,
+      status: 'done' as const,
+      result: null,
+      error: null
+    }
+    const open = (extra: object): ReturnType<typeof reviewReducer> =>
+      reviewReducer(null, { type: 'open', requestId: 1, entry: { ...saved, ...extra } })
+    expect(open({})).toMatchObject({ incremental: null, overrides: {}, options: {} })
+    expect(
+      open({
+        incremental: { parentId: 'r0', comparedSha: 'c'.repeat(40), comparison },
+        overrides: { a: 'new' }
+      })
+    ).toMatchObject({
+      incremental: { parentId: 'r0', comparison, fallbackReason: null },
+      overrides: { a: 'new' },
+      options: { incrementalFrom: 'r0' }
+    })
+    expect(open({ fallbackReason: 'rebased' })?.incremental?.fallbackReason).toBe('rebased')
+  })
+})

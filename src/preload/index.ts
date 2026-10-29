@@ -10,11 +10,13 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 // The renderer's only door to the main process. Sandboxed preloads can only require
 // 'electron' at runtime; local imports like ../shared are fine because they're bundled in.
 const api: PrHubApi = {
-  startReview: (input) => ipcRenderer.invoke(IPC.startReview, input),
+  startReview: (input, options) => ipcRenderer.invoke(IPC.startReview, input, options),
+  incrementalOffer: (prUrl, parentId) => ipcRenderer.invoke(IPC.incrementalOffer, prUrl, parentId),
   cancelReview: (reviewId) => ipcRenderer.invoke(IPC.cancelReview, reviewId),
   onReviewEvent: (listener) => subscribe<ReviewEvent>(IPC.reviewEvent, listener),
   listHistory: () => ipcRenderer.invoke(IPC.listHistory),
   getHistory: (id) => ipcRenderer.invoke(IPC.getHistory, id),
+  setOverride: (id, key, value) => ipcRenderer.invoke(IPC.setOverride, id, key, value),
   setHistoryPinned: (id, pinned) => ipcRenderer.invoke(IPC.setHistoryPinned, id, pinned),
   deleteHistory: (id) => ipcRenderer.invoke(IPC.deleteHistory, id),
   exportHistory: (id, format) => ipcRenderer.invoke(IPC.exportHistory, id, format),

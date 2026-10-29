@@ -31,6 +31,8 @@ const s = (id: string, extra: Partial<HistorySummary> = {}): HistorySummary => (
   postCount: 0,
   postedFindings: 0,
   pinned: false,
+  incremental: null,
+  fallbackReason: null,
   ...extra
 })
 
