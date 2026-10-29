@@ -9,6 +9,7 @@ import type {
   PreviewResult
 } from './github'
 import type { HistoryEntry, HistorySummary } from './history'
+import type { Comparison, Lifecycle, OfferReason, Override } from './incremental'
 import type { Browser, Settings } from './settings'
 import type { ReviewInput } from './validate'
 
@@ -20,6 +21,8 @@ export const IPC = {
   reviewEvent: 'review:event',
   listHistory: 'history:list',
   getHistory: 'history:get',
+  setOverride: 'history:set-override',
+  incrementalOffer: 'review:incremental-offer',
   setHistoryPinned: 'history:set-pinned',
   deleteHistory: 'history:delete',
   exportHistory: 'history:export',
@@ -48,7 +51,7 @@ export interface BrowserStatus {
 }
 
 /** Dev-only fixture replay modes: the full review, markdown only, or a mid-run failure. */
-export const REPLAY_VARIANTS = ['full', 'no-findings', 'error'] as const
+export const REPLAY_VARIANTS = ['full', 'no-findings', 'error', 'incremental', 'fallback'] as const
 export type ReplayVariant = (typeof REPLAY_VARIANTS)[number]
 
 export type HistoryExportFormat = 'markdown' | 'json'
@@ -61,6 +64,41 @@ export type ExportHistoryResult =
 
 /** 'missing': the entry was already gone. */
 export type DeleteHistoryResult = 'deleted' | 'cancelled' | 'missing'
+
+export interface StartReviewOptions {
+  /** Id of a saved review of the same PR to compare against (an incremental re-review). */
+  incrementalFrom?: string
+}
+
+/** How an incremental request turned out. Absent on full reviews nobody asked to compare. */
+export interface IncrementalOutcome {
+  parentId: string
+  /** The previous commit, when the run really was incremental. */
+  comparedSha: string | null
+  comparison: Comparison | null
+  /** Set when it ran as a full review instead, with the reason. */
+  fallbackReason: string | null
+}
+
+/** Whether "Review changes since the previous review" can be offered for a PR. */
+export interface IncrementalOffer {
+  /** The review it would compare against; null when the PR has no finished review. */
+  parent: {
+    id: string
+    title: string
+    startedAt: number
+    headSha: string | null
+    verdict: string | null
+    counts: Record<'blocking' | 'should_fix' | 'nit', number> | null
+    /** Lifecycle counts when the parent was itself incremental. */
+    lifecycle: Record<Lifecycle, number> | null
+  } | null
+  /** The PR's current head, when GitHub could be read. */
+  headSha: string | null
+  available: boolean
+  reason: OfferReason | null
+  message: string | null
+}
 
 export type StartReviewResult = { ok: true; reviewId: string } | { ok: false; error: string }
 
@@ -81,20 +119,27 @@ export type ReviewEventBody =
   | { type: 'tool'; tool: string; label: string }
   | { type: 'text'; text: string }
   /** headSha: the PR commit that was reviewed, when the app could read it. */
-  | { type: 'done'; result: ReviewResult; headSha?: string }
+  | { type: 'done'; result: ReviewResult; headSha?: string; incremental?: IncrementalOutcome }
   | { type: 'error'; message: string }
   | { type: 'cancelled' }
 
 export type ReviewEvent = ReviewEventBody & { reviewId: string }
 
 export interface PrHubApi {
-  startReview(input: ReviewInput): Promise<StartReviewResult>
+  startReview(input: ReviewInput, options?: StartReviewOptions): Promise<StartReviewResult>
+  /**
+   * Read-only: finds the newest saved review of this PR (or `parentId`) and asks GitHub how the
+   * PR changed since, to decide whether an incremental review can be offered.
+   */
+  incrementalOffer(prUrl: string, parentId?: string): Promise<IncrementalOffer>
   cancelReview(reviewId: string): Promise<void>
   /** Subscribes to review events; returns an unsubscribe function. */
   onReviewEvent(listener: (event: ReviewEvent) => void): () => void
   /** Finished reviews, newest first. */
   listHistory(): Promise<HistorySummary[]>
   getHistory(id: string): Promise<HistoryEntry | null>
+  /** Settles an uncertain comparison item locally (null clears it). Never touches GitHub. */
+  setOverride(id: string, key: string, value: Override | null): Promise<HistoryEntry | null>
   /** Pins (keeps past the history limit) or unpins an entry; null if it no longer exists. */
   setHistoryPinned(id: string, pinned: boolean): Promise<HistorySummary | null>
   /**

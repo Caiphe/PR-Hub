@@ -34,7 +34,13 @@ vi.mock('./githubPoster', async (orig) => ({
 vi.mock('./githubHealth', () => ({ checkConnection: gh.checkConnection }))
 vi.mock('./environment', () => ({ resolveChildEnv: async () => ({}) }))
 
-const store = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }))
+const store = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), list: vi.fn() }))
+const inspect = vi.hoisted(() => ({ inspectPr: vi.fn(), compareCommits: vi.fn() }))
+vi.mock('./prInspect', () => ({
+  inspectPr: inspect.inspectPr,
+  inspectIssue: vi.fn(),
+  compareCommits: inspect.compareCommits
+}))
 vi.mock('./reviewIpc', () => ({
   getEnvironment: async () => ({ env: {} }),
   getHistory: () => store
@@ -129,6 +135,94 @@ describe('github preview', () => {
     expect(res.ok && res.preview.warnings[0]).toMatch(
       /fine-grained token.*sindresorhus\/slugify with Pull requests: Read and write/
     )
+  })
+})
+
+describe('github preview after an incremental review', () => {
+  it('warns when a ticked finding continues one already posted', async () => {
+    const item = {
+      key: 'prev:p1',
+      status: 'still_present' as const,
+      previous: { id: 'p1', title: 'Bug', severity: 'blocking' as const, file: null, line: null },
+      currentId: 'f1',
+      suggestedId: null,
+      previousPosted: true,
+      evidence: {
+        model: null,
+        location: { kind: 'no_location' as const, from: null, to: null },
+        similarity: 1,
+        reason: 'r'
+      }
+    }
+    store.get.mockResolvedValue(
+      entry({
+        incremental: {
+          parentId: 'r0',
+          comparedSha: 'c'.repeat(40),
+          comparison: {
+            parentId: 'r0',
+            comparedSha: 'c'.repeat(40),
+            previousVerdict: 'request_changes',
+            modelCompared: true,
+            items: [item]
+          }
+        }
+      })
+    )
+    const res = await preview()
+    expect(res.ok && res.preview.warnings.join(' ')).toMatch(
+      /1 selected finding continues one already posted from an earlier review/
+    )
+  })
+})
+
+describe('incremental offer', () => {
+  const offer = (url: unknown, parentId?: unknown): Promise<unknown> =>
+    handlers[IPC.incrementalOffer]({}, url, parentId) as Promise<unknown>
+  const summary = {
+    id: 'r1',
+    title: 'T',
+    prUrl: 'https://github.com/a/b/pull/1',
+    startedAt: 5,
+    status: 'done',
+    headSha: 'a'.repeat(40),
+    verdict: 'approve',
+    counts: { blocking: 0, should_fix: 1, nit: 0 },
+    incremental: null
+  }
+
+  it('offers when GitHub says the PR moved ahead of the reviewed commit', async () => {
+    store.list.mockResolvedValue([summary])
+    inspect.inspectPr.mockResolvedValue({ ok: true, pr: { headSha: 'b'.repeat(40) } })
+    inspect.compareCommits.mockResolvedValue('ahead')
+    expect(await offer('https://github.com/a/b/pull/1/files')).toMatchObject({
+      available: true,
+      reason: null,
+      headSha: 'b'.repeat(40),
+      parent: { id: 'r1', headSha: 'a'.repeat(40) }
+    })
+    expect(inspect.compareCommits).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: 'a', repo: 'b', number: 1 }),
+      'a'.repeat(40),
+      'b'.repeat(40),
+      expect.anything()
+    )
+  })
+
+  it('explains why not after a rebase, with no new commits, or without history', async () => {
+    store.list.mockResolvedValue([summary])
+    inspect.inspectPr.mockResolvedValue({ ok: true, pr: { headSha: 'b'.repeat(40) } })
+    inspect.compareCommits.mockResolvedValue('diverged')
+    expect(await offer(summary.prUrl)).toMatchObject({
+      available: false,
+      reason: 'diverged',
+      message: expect.stringMatching(/force-pushed or rebased/)
+    })
+    inspect.inspectPr.mockResolvedValue({ ok: true, pr: { headSha: 'a'.repeat(40) } })
+    expect(await offer(summary.prUrl)).toMatchObject({ available: false, reason: 'same_commit' })
+    store.list.mockResolvedValue([])
+    expect(await offer(summary.prUrl)).toMatchObject({ available: false, parent: null })
+    expect(await offer('https://evil.example/x')).toMatchObject({ parent: null })
   })
 })
 

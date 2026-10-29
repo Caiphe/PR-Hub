@@ -2,10 +2,18 @@ import { spawn, type ChildProcess } from 'child_process'
 import { createWriteStream } from 'fs'
 import { join } from 'path'
 import { createInterface } from 'readline'
+import type { Finding } from '../shared/findings'
 import type { ReviewEventBody } from '../shared/ipc'
 import type { ReviewInput } from '../shared/validate'
 import { extractFindings } from './extractFindings'
-import { buildPrompt, buildSystemPrompt, fetchScriptPath, type SkillContext } from './prompt'
+import { prepareIncremental } from './incremental'
+import {
+  buildPrompt,
+  buildSystemPrompt,
+  fetchScriptPath,
+  type IncrementalContext,
+  type SkillContext
+} from './prompt'
 import { parseStreamLine, type StreamResult } from './streamParser'
 
 export const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
@@ -21,6 +29,11 @@ export interface RunOptions {
   emit: (event: ReviewEventBody) => void
   timeoutMs?: number
   model?: string
+  /**
+   * Review only what changed since a previous review of this PR. Checked after the fetch: if
+   * the previous commit isn't an ancestor of the new head, the run continues as a full review.
+   */
+  incremental?: { previousSha: string; previousFindings: readonly Finding[] }
 }
 
 export interface ReviewHandle {
@@ -144,7 +157,7 @@ export function runReview(opts: RunOptions): ReviewHandle {
       child.on('close', (code) => resolve({ ok: code === 0, output: output.trim() }))
     })
 
-  const runClaude = (fetchLog: string): void => {
+  const runClaude = (fetchLog: string, incremental?: IncrementalContext): void => {
     let result: StreamResult | null = null
     let stderrTail = ''
     const child = spawn(opts.claudePath, buildArgs(opts), {
@@ -157,7 +170,9 @@ export function runReview(opts: RunOptions): ReviewHandle {
 
     // The prompt goes over stdin: it keeps the task text out of `ps` output.
     child.stdin.on('error', () => {})
-    child.stdin.end(buildPrompt(opts.input, { workDir, fetchLog }))
+    child.stdin.end(
+      buildPrompt(opts.input, { workDir, fetchLog, ...(incremental ? { incremental } : {}) })
+    )
 
     createInterface({ input: child.stdout }).on('line', (line) => {
       raw.write(line + '\n')
@@ -192,8 +207,28 @@ export function runReview(opts: RunOptions): ReviewHandle {
         message: `Couldn't fetch the PR (private repo, wrong link, or no network?). For private repos, run \`gh auth login\`.\n\n${fetched.output.slice(-1500)}`
       })
     }
+    let incremental: IncrementalContext | undefined
+    if (opts.incremental) {
+      emit({ type: 'status', message: 'Comparing with the previous review' })
+      const { previousSha, previousFindings } = opts.incremental
+      const files = previousFindings.flatMap((f) => (f.file ? [f.file] : []))
+      const prepared = await prepareIncremental(join(workDir, PR_DIR), previousSha, files, opts.env)
+      const again = stopReason()
+      if (again) return settle(again)
+      if (prepared.ok) {
+        incremental = { previousSha, commits: prepared.commits, previousFindings }
+        const count = prepared.commits.split('\n').filter(Boolean).length
+        emit({
+          type: 'status',
+          message: `Reviewing ${count} new commit${count === 1 ? '' : 's'} since the previous review`
+        })
+      } else {
+        // The reason is saved with the review and shown on the result.
+        emit({ type: 'status', message: 'Running a full review instead' })
+      }
+    }
     emit({ type: 'status', message: 'Starting Claude Code' })
-    runClaude(fetched.output)
+    runClaude(fetched.output, incremental)
   }
 
   start().catch((error) => settle({ type: 'error', message: `Review failed: ${error.message}` }))

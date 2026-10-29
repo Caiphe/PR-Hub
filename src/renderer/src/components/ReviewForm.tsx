@@ -19,14 +19,17 @@ import {
   type FillPlan,
   type TaskText
 } from '../review/intake'
+import type { StartReviewOptions } from '@shared/ipc'
 import { useGitHubStatus } from '../review/useGitHubStatus'
+import { chosenParent, useIncrementalOffer, type ReviewMode } from '../review/useIncrementalOffer'
 import { usePrInspection } from '../review/usePrInspection'
 import { GitHubStatusChip, GitHubStatusPanel } from './GitHubStatus'
 import { FieldIcon, GitHubIcon } from './InterfaceIcons'
+import { PreviousReview } from './PreviousReview'
 import { PrSummary } from './PrSummary'
 
 interface Props {
-  onSubmit: (input: ReviewInput) => void
+  onSubmit: (input: ReviewInput, options?: StartReviewOptions) => void
   /** Pre-fills the form, e.g. with the last task when coming back from a review. */
   initialValues?: ReviewInput
 }
@@ -71,6 +74,9 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
   const id = useId()
   // Guidance only: reviews of public PRs don't need gh, so this never blocks submitting.
   const github = useGitHubStatus()
+  // Offered when this PR was reviewed before and only gained commits since.
+  const offer = useIncrementalOffer(values.prUrl)
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('incremental')
 
   // The PR that the auto-filled text came from.
   const [autoFor, setAutoFor] = useState<string | null>(null)
@@ -201,13 +207,17 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
       setTouched({ title: true, prUrl: true, description: true })
       return
     }
-    onSubmit({
-      title: values.title.trim(),
-      // Canonical form: drops /files, query strings and anchors.
-      prUrl: parsePrUrl(values.prUrl)?.url ?? values.prUrl.trim(),
-      description: values.description.trim(),
-      taskSource: descriptionSource
-    })
+    const parentId = chosenParent(offer, reviewMode)
+    onSubmit(
+      {
+        title: values.title.trim(),
+        // Canonical form: drops /files, query strings and anchors.
+        prUrl: parsePrUrl(values.prUrl)?.url ?? values.prUrl.trim(),
+        description: values.description.trim(),
+        taskSource: descriptionSource
+      },
+      parentId ? { incrementalFrom: parentId } : undefined
+    )
   }
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
@@ -286,6 +296,8 @@ export function ReviewForm({ onSubmit, initialValues }: Props): React.JSX.Elemen
         <GitHubStatusPanel state={github} prUrl={values.prUrl} />
         {inspection && <PrSummary inspection={inspection} onRetry={retry} />}
       </div>
+
+      <PreviousReview offer={offer} mode={reviewMode} onMode={setReviewMode} />
 
       {pr && (
         <fieldset className="field task-source">

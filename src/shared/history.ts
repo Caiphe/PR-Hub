@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { FindingsSchema, type Finding, type Findings } from './findings'
+import { ComparisonSchema, lifecycleCounts, OverrideSchema, type Lifecycle } from './incremental'
 import { TASK_SOURCES } from './validate'
 
 // Persisted review history. Only finished reviews are saved (done or failed);
@@ -43,7 +44,23 @@ export const HistoryEntrySchema = z.object({
     )
     .optional(),
   /** Pinned entries are never trimmed by the history limit. Absent means not pinned. */
-  pinned: z.boolean().optional().catch(undefined)
+  pinned: z.boolean().optional().catch(undefined),
+  /**
+   * Set on an incremental review: the review it compared against (its parent), that review's
+   * commit, and the finding-by-finding comparison (null if it couldn't be built). Absent: a full
+   * review, which is what every entry saved before incremental reviews is.
+   */
+  incremental: z
+    .object({
+      parentId: z.string().min(1),
+      comparedSha: z.string(),
+      comparison: ComparisonSchema.nullable()
+    })
+    .optional(),
+  /** An incremental review was asked for but ran as a full one, and why. */
+  fallbackReason: z.string().optional(),
+  /** Local decisions on uncertain comparison items. Never sent to GitHub. */
+  overrides: z.record(OverrideSchema).optional()
 })
 
 export type HistoryEntry = z.infer<typeof HistoryEntrySchema>
@@ -73,6 +90,13 @@ export interface HistorySummary {
   postCount: number
   postedFindings: number
   pinned: boolean
+  /** Incremental reviews: what it compared against, and the counts per lifecycle. */
+  incremental: {
+    parentId: string
+    comparedSha: string
+    counts: Record<Lifecycle, number> | null
+  } | null
+  fallbackReason: string | null
 }
 
 export function summarize(entry: HistoryEntry): HistorySummary {
@@ -99,6 +123,16 @@ export function summarize(entry: HistoryEntry): HistorySummary {
     counts,
     postCount: posted.length,
     postedFindings: new Set(posted.flatMap((p) => p.findingIds)).size,
-    pinned: entry.pinned === true
+    pinned: entry.pinned === true,
+    incremental: entry.incremental
+      ? {
+          parentId: entry.incremental.parentId,
+          comparedSha: entry.incremental.comparedSha,
+          counts: entry.incremental.comparison
+            ? lifecycleCounts(entry.incremental.comparison, entry.overrides)
+            : null
+        }
+      : null,
+    fallbackReason: entry.fallbackReason ?? null
   }
 }

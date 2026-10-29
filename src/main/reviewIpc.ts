@@ -9,6 +9,7 @@ import {
   REPLAY_VARIANTS,
   type ReplayVariant,
   type ReviewEvent,
+  type IncrementalOutcome,
   type ReviewEventBody,
   type StartReviewResult
 } from '../shared/ipc'
@@ -16,6 +17,7 @@ import { reviewRunSettings } from '../shared/settings'
 import { parsePrUrl, TASK_SOURCES, validateReviewInput, type ReviewInput } from '../shared/validate'
 import { loadSkill, resolveReviewEnvironment, type ReviewEnvironment } from './environment'
 import { HistoryStore } from './historyStore'
+import { incrementalRecord, parentProblem, readIncrementalOutcome } from './incremental'
 import { handle } from './ipcGuard'
 import { replayFixture } from './replay'
 import { runReview, type ReviewHandle } from './reviewRunner'
@@ -67,20 +69,38 @@ async function readReviewedHead(repoDir: string): Promise<string | undefined> {
 // Called once per review with its terminal event. Saves finished reviews and frees disk:
 // the PR checkout (often the largest thing here) goes right away; stream.jsonl stays
 // for debugging until the entry is trimmed out of history.
+/** An incremental request: the parent to compare against, or why it can't be used. */
+interface IncrementalPlan {
+  parentId: string
+  parent: HistoryEntry | null
+  preset: string | null
+}
+
 async function finishReview(
   reviewId: string,
   input: ReviewInput,
   startedAt: number,
-  event: ReviewEventBody
-): Promise<string | undefined> {
+  event: ReviewEventBody,
+  plan: IncrementalPlan | null
+): Promise<{ headSha?: string; incremental?: IncrementalOutcome }> {
   const workDir = join(reviewsDir(), reviewId)
   if (event.type === 'cancelled') {
     await removeDir(workDir)
-    return undefined
+    return {}
   }
   const headSha = await readReviewedHead(join(workDir, 'pr/repo'))
+  // Read the comparison step's result before the checkout (where it lives) is deleted.
+  const record = plan
+    ? incrementalRecord({
+        parent: plan.parent,
+        parentId: plan.parentId,
+        preset: plan.preset,
+        outcome: await readIncrementalOutcome(join(workDir, 'pr')),
+        findings: event.type === 'done' ? event.result.findings : null
+      })
+    : null
   await removeDir(join(workDir, 'pr'))
-  if (event.type !== 'done' && event.type !== 'error') return headSha
+  if (event.type !== 'done' && event.type !== 'error') return { headSha }
 
   const entry: HistoryEntry = {
     id: reviewId,
@@ -90,14 +110,19 @@ async function finishReview(
     status: event.type,
     result: event.type === 'done' ? event.result : null,
     error: event.type === 'error' ? event.message : null,
-    ...(headSha ? { headSha } : {})
+    ...(headSha ? { headSha } : {}),
+    ...record?.fields
   }
   const trimmed = await history.add(entry)
   await Promise.all(trimmed.map((id) => removeDir(join(reviewsDir(), id))))
-  return headSha
+  return { headSha, ...(record ? { incremental: record.outcome } : {}) }
 }
 
-async function startReview(sender: WebContents, raw: unknown): Promise<StartReviewResult> {
+async function startReview(
+  sender: WebContents,
+  raw: unknown,
+  rawOptions: unknown
+): Promise<StartReviewResult> {
   // Re-validate at the IPC boundary: the renderer is not trusted to have done it.
   const candidate = (raw ?? {}) as Partial<ReviewInput>
   const input: ReviewInput = {
@@ -110,6 +135,15 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
   const errors = validateReviewInput(input)
   if (Object.keys(errors).length > 0) return { ok: false, error: Object.values(errors)[0]! }
   input.prUrl = parsePrUrl(input.prUrl)!.url
+
+  // The parent comes from history in main, never from the renderer: only its id is read.
+  const parentId = (rawOptions as { incrementalFrom?: unknown } | null)?.incrementalFrom
+  let plan: IncrementalPlan | null = null
+  if (typeof parentId === 'string' && parentId) {
+    const parent = await history.get(parentId)
+    plan = { parentId, parent, preset: parentProblem(parent, input.prUrl) }
+  }
+  const parentFindings = plan && !plan.preset ? plan.parent!.result!.findings! : null
 
   try {
     const [env, skill] = await Promise.all([getEnvironment(), loadSkill()])
@@ -128,20 +162,35 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
       skill,
       model,
       timeoutMs,
+      ...(parentFindings
+        ? {
+            incremental: {
+              previousSha: plan!.parent!.headSha!,
+              previousFindings: parentFindings.findings
+            }
+          }
+        : {}),
       emit: (body) => {
         if (body.type !== 'done' && body.type !== 'error' && body.type !== 'cancelled') {
           return send(sender, { ...body, reviewId })
         }
         // Save before telling the renderer, so actions on the finished review (like posting
         // to GitHub, which reads it from history) can't race the write.
-        finishReview(reviewId, input, startedAt, body)
+        finishReview(reviewId, input, startedAt, body, plan)
           .catch((error) => {
             console.error('Failed to record review', error)
-            return undefined
+            return {} as Awaited<ReturnType<typeof finishReview>>
           })
-          .then((headSha) => {
+          .then(({ headSha, incremental }) => {
             // The reviewed commit lets the window link findings to the exact lines on GitHub.
-            const out = body.type === 'done' && headSha ? { ...body, headSha } : body
+            const out =
+              body.type === 'done'
+                ? {
+                    ...body,
+                    ...(headSha ? { headSha } : {}),
+                    ...(incremental ? { incremental } : {})
+                  }
+                : body
             send(sender, { ...out, reviewId })
             if (body.type !== 'cancelled') onFinished(input, body)
           })
@@ -186,7 +235,7 @@ export function registerReviewIpc(options: { onFinished?: ReviewFinishedListener
     () => getSettings().historyLimit
   )
 
-  handle(IPC.startReview, (event, input) => startReview(event.sender, input))
+  handle(IPC.startReview, (event, input, options) => startReview(event.sender, input, options))
   handle(IPC.cancelReview, (_event, reviewId: unknown) => {
     if (typeof reviewId === 'string') running.get(reviewId)?.cancel()
   })

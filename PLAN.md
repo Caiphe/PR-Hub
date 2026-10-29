@@ -63,6 +63,23 @@ As built (`src/main/reviewRunner.ts`). Prompt 3 set this up, and the Prompt 7 `/
 - Cancel and timeout (15 minutes by default, 5 to 60 in Settings) cover both the fetch and the review, and kill each child's whole process group. Quitting the app stops running reviews first.
 - `PR_HUB_MODEL` overrides the model. `npm run review:cli -- <url> "<title>" "<desc>"` runs the same runner without Electron.
 
+### Incremental re-reviews (`src/shared/incremental.ts`, `src/main/incremental.ts`)
+
+A PR reviewed before can be reviewed again for only what changed since, compared finding by finding with that review (its "parent").
+
+- **Offering it (read-only).** `review:incremental-offer` picks the newest finished review of the PR from history, reads the PR's current head, and asks GitHub's compare API (gh, or the anonymous public API) how the parent's commit relates to it. Only `ahead` is offered. Every other answer is a reason shown in the form: no saved commit, no structured findings, no new commits, force-pushed or rebased (`diverged`/`behind`), or the check failed.
+- **Data available.** The skill's fetch script makes a full-history, blob-less clone of the PR head and the base branch. The parent's commit is in it only if it's still an ancestor of the head. After a force-push it usually isn't fetchable at all.
+- **Checked again after the fetch.** `prepareIncremental` runs `git` itself (argument arrays, validated 40-hex SHAs, `core.quotePath=false`): `rev-parse pr`, `cat-file -e <prev>^{commit}`, `merge-base --is-ancestor <prev> pr`. If any check fails, the run continues as a full review with the reason saved (`fallbackReason`); there's no second fetch and no question asked.
+- **What the reviewer gets.** `pr/incremental.diff` (`git diff -M <prev> pr`, limited to files the PR touched at either commit plus files of previous findings, so a merge of `main` into the branch doesn't drown the change), `pr/incremental-commits.txt`, and the previous findings in a `<previous-findings>` block marked as data quoting untrusted content. It still has `pr.diff` and the full checkout, and is told to judge new commits in the whole PR's context. It lists every issue at the new head (`previous_id` links one to the previous finding it continues) and classifies each previous finding in `previous_findings`. The full-review prompt is unchanged (snapshot-tested).
+- **Matching** (`compareFindings`, pure). Deterministic evidence: old lines mapped to new ones through `git diff -M -U0 <prev> pr` (renames, insertions, deletions), whether the old line was edited, and word-overlap similarity of title and body. The model's claim is accepted only when the evidence agrees:
+  - linked and similar (or the line is untouched) → Still present;
+  - "resolved" and the line or file changed or was deleted → Resolved (not tied to a line: the model's word is taken, and said so);
+  - "resolved" but the code is untouched, a link that contradicts the evidence, a missing or malformed classification, or an unlinked near-duplicate → Unable to verify (an unlinked near-duplicate also gets a suggested match);
+  - unlinked with no match → New.
+- **Overrides.** Uncertain items can be settled locally (`history:set-override`): a previous finding as Still present or Resolved, a possible repeat as New or Still present. Settling one side of a suggested pair settles the other. Never sent to GitHub.
+- **History (file version 3).** `incremental: {parentId, comparedSha, comparison}`, `fallbackReason`, `overrides`, all optional. Older entries read as full reviews. An incremental review's findings are the PR's current issues, so a chain of incremental reviews stays consistent.
+- **Posting.** The same exact preview and confirmation. Only New findings are ticked by default; Still present and uncertain ones can be ticked explicitly. Resolved findings aren't findings of the review, so they can't be posted. Posted ids follow the lineage (`postedLineage`), so a still-present finding whose earlier version was posted is badged "Posted earlier", and the preview warns before posting it again.
+
 ### Posting to GitHub (Prompt 6, `src/main/github*.ts`)
 
 - Two steps. `github:preview` builds the exact payload, caches it, and returns it for display. `github:post` submits only a cached preview. The renderer never sends a payload, and anything besides the preview id and the `force` flag is ignored.
@@ -81,10 +98,11 @@ As built (`src/main/reviewRunner.ts`). Prompt 3 set this up, and the Prompt 7 `/
 
 Every handler checks that the call comes from the app's own page (`src/main/ipcGuard.ts`), and the window can't navigate away from it.
 
-- `review:start(input) → {ok, reviewId} | {ok:false, error}`. `input.taskSource` (`manual`/`pr`/`issue`) marks PR- or issue-derived task text as untrusted in the prompt.
+- `review:start(input, {incrementalFrom?}) → {ok, reviewId} | {ok:false, error}`. `input.taskSource` (`manual`/`pr`/`issue`) marks PR- or issue-derived task text as untrusted in the prompt. `incrementalFrom` is a history id; main loads that review itself and only uses it if it's a finished review of the same PR with a commit and findings.
+- `review:incremental-offer(prUrl, parentId?) → IncrementalOffer`: read-only, see "Incremental re-reviews".
 - `review:cancel(reviewId)`
-- `review:event` (main → renderer): `{reviewId, type: 'status'|'tool'|'text'|'done'|'error'|'cancelled', …}`. `done` carries `headSha` (the reviewed commit) when known, used for "Open on GitHub" links.
-- `history:list() → HistorySummary[]` · `history:get(id) → HistoryEntry | null` · `history:set-pinned(id, pinned)` · `history:delete(id)` (native confirmation in main) · `history:export(id, format)` (native save panel in main)
+- `review:event` (main → renderer): `{reviewId, type: 'status'|'tool'|'text'|'done'|'error'|'cancelled', …}`. `done` carries `headSha` (the reviewed commit) when known, used for "Open on GitHub" links, and `incremental` (the comparison, or the fallback reason) when an incremental review was asked for.
+- `history:list() → HistorySummary[]` · `history:get(id) → HistoryEntry | null` · `history:set-pinned(id, pinned)` · `history:delete(id)` (native confirmation in main) · `history:export(id, format)` (native save panel in main) · `history:set-override(id, key, value | null)` (uncertain comparison items only)
 - `github:preview(reviewId, findingIds, mode) → PostPreview` · `github:post(previewId, {force?}) → PostRecord | failure` · `github:verify-post(previewId)`: a read-only marker lookup for an unclear submission
 - `github:inspect-pr(prUrl) → PrMetadata` · `github:inspect-issue(issueUrl) → IssueDetails`: read-only intake metadata (`src/main/prInspect.ts`). They use gh when it's signed in and the anonymous public API otherwise, re-validate the link in main, cache answers for 2 minutes, and return a fixed subset of cleaned, size-capped text.
 - `github:status(prUrl?) → ConnectionStatus`: read-only gh check (`--version`, `auth status`, one GET of the PR). Never writes, never returns a token. Preview/post failures carry a classified `problem` with fix-it steps (`src/main/githubErrors.ts`).
@@ -102,10 +120,14 @@ Every handler checks that the call comes from the app's own page (`src/main/ipcG
   "findings": [{
     "id": "f1", "severity": "blocking|should_fix|nit",
     "title": "", "file": "path", "line": 42,
-    "body": "", "suggestion": "optional code"
-  }]
+    "body": "", "suggestion": "optional code",
+    "previous_id": "incremental reviews only: the previous finding this continues, or null"
+  }],
+  "previous_findings": [{ "id": "", "status": "still_present|resolved|unable_to_verify", "evidence": "" }]
 }
 ```
+
+`previous_id` and `previous_findings` are asked for only in incremental reviews. A malformed `previous_findings` list is dropped rather than failing the block; every previous finding then shows as Unable to verify.
 
 ## Build phases
 

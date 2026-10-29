@@ -2898,6 +2898,123 @@ button.danger-button:hover:not(:disabled) {
   margin: 0;
 }
 
+/* Incremental reviews: the form's previous-review choice, Re-run menu, comparison screen */
+
+.dot-info {
+  background: var(--info);
+}
+
+.dot-good {
+  background: var(--good);
+}
+
+.previous-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.previous-meta code,
+.run-lineage code,
+.comparison-commits code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.task-source-option input:disabled + span {
+  color: var(--subtle);
+}
+
+.rerun-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.rerun-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 190px;
+  padding: 10px 12px;
+  background: var(--surface-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+}
+
+.rerun-options .link-button {
+  font-size: 13px;
+  text-align: left;
+}
+
+.run-lineage {
+  display: block;
+  padding: 0 11px 8px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.run-lineage .link-button {
+  padding: 0;
+  font-size: 12px;
+}
+
+.comparison-commits,
+.comparison-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.comparison-panel .severity-chip {
+  cursor: default;
+}
+
+.comparison-evidence p {
+  margin: 0 0 8px;
+}
+
+.comparison-evidence .post-facts {
+  font-size: 12.5px;
+}
+
+.comparison-evidence .post-facts dt {
+  color: var(--muted);
+}
+
+.comparison-evidence .post-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.override {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.override button[aria-pressed='true'] {
+  color: var(--text);
+  border-color: rgba(132, 127, 255, 0.6);
+  background: rgba(105, 101, 255, 0.24);
+}
+
 @media (max-width: 410px), (max-height: 590px) {
   .field + .task-source,
   .task-source + .field {

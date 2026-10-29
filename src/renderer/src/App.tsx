@@ -15,7 +15,9 @@ import { useReview } from './review/useReview'
 const REPLAY_LABELS: Record<ReplayVariant, string> = {
   full: 'full',
   'no-findings': 'no findings',
-  error: 'error'
+  error: 'error',
+  incremental: 'incremental',
+  fallback: 'fallback'
 }
 
 function App(): React.JSX.Element {
@@ -85,6 +87,7 @@ function App(): React.JSX.Element {
         onCancel={review.cancel}
         onRetry={review.retry}
         onPosted={review.markPosted}
+        onOverride={review.setOverride}
       />
     )
   }
@@ -119,9 +122,9 @@ function App(): React.JSX.Element {
       <ReviewForm
         key={formKey}
         initialValues={lastInput}
-        onSubmit={(input) => {
+        onSubmit={(input, options) => {
           setLastInput(input)
-          review.start(input)
+          review.start(input, options)
         }}
       />
       <RecentReviews onOpen={(id) => void review.open(id)} onShowAll={() => setView('history')} />

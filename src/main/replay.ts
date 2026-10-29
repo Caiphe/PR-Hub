@@ -1,5 +1,9 @@
 import { readFile } from 'fs/promises'
+import { dirname, join } from 'path'
+import type { Finding, PreviousFinding } from '../shared/findings'
+import { compareFindings, parseUnifiedDiff } from '../shared/incremental'
 import type { ReplayVariant, ReviewEventBody } from '../shared/ipc'
+import { FALLBACK } from './incremental'
 import type { ReviewHandle } from './reviewRunner'
 import { doneEvent } from './reviewRunner'
 import { parseStreamLine, type StreamResult } from './streamParser'
@@ -8,7 +12,9 @@ const STEP_DELAY_MS = 350
 
 // Dev-only: plays a recorded stream-json file through the same parser as a live review,
 // so the review UI can be worked on without spending a real run. Variants exercise the
-// fallback states: 'no-findings' drops the JSON block, 'error' fails partway through.
+// fallback states: 'no-findings' drops the JSON block, 'error' fails partway through,
+// 'incremental' compares with a made-up previous review (fixtures/incremental-replay.json),
+// and 'fallback' is an incremental request that had to run as a full review.
 export function replayFixture(
   fixturePath: string,
   variant: ReplayVariant,
@@ -45,7 +51,22 @@ export function replayFixture(
     if (variant === 'no-findings') {
       result = { ...result, text: result.text.replace(/```json[\s\S]*```/, '') }
     }
-    emit(doneEvent(result))
+    const done = doneEvent(result)
+    if (variant === 'fallback' && done.type === 'done') {
+      return emit({
+        ...done,
+        incremental: {
+          parentId: 'replay-parent',
+          comparedSha: null,
+          comparison: null,
+          fallbackReason: FALLBACK.notAncestor
+        }
+      })
+    }
+    if (variant === 'incremental' && done.type === 'done' && done.result.findings) {
+      return emit(await withComparison(done, join(dirname(fixturePath), 'incremental-replay.json')))
+    }
+    emit(done)
   }
 
   play()
@@ -57,5 +78,53 @@ export function replayFixture(
       cancelled = true
     },
     finished
+  }
+}
+
+interface IncrementalFixture {
+  previousSha: string
+  headSha: string
+  previousVerdict: string
+  previous: Finding[]
+  links: Record<string, string>
+  extraFindings: Finding[]
+  model: PreviousFinding[]
+  diff: string
+  postedPrevious: string[]
+}
+
+async function withComparison(
+  done: Extract<ReviewEventBody, { type: 'done' }>,
+  path: string
+): Promise<ReviewEventBody> {
+  const fx = JSON.parse(await readFile(path, 'utf8')) as IncrementalFixture
+  const findings = done.result.findings!
+  const current = [
+    ...findings.findings.map((f) => ({ ...f, previous_id: fx.links[f.id] ?? null })),
+    ...fx.extraFindings
+  ]
+  const comparison = compareFindings({
+    parentId: 'replay-parent',
+    comparedSha: fx.previousSha,
+    previousVerdict: fx.previousVerdict,
+    previous: fx.previous,
+    current,
+    model: fx.model,
+    diff: parseUnifiedDiff(fx.diff),
+    previousPosted: new Set(fx.postedPrevious)
+  })
+  return {
+    ...done,
+    headSha: fx.headSha,
+    result: {
+      ...done.result,
+      findings: { ...findings, findings: current, previous_findings: fx.model }
+    },
+    incremental: {
+      parentId: 'replay-parent',
+      comparedSha: fx.previousSha,
+      comparison,
+      fallbackReason: null
+    }
   }
 }

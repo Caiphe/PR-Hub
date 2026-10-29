@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Findings } from '@shared/findings'
 import type { PostRecord } from '@shared/github'
+import {
+  currentLifecycle,
+  defaultPostSelection,
+  type CurrentLifecycle,
+  type Override
+} from '@shared/incremental'
+import type { StartReviewOptions } from '@shared/ipc'
 import { isTerminal, type ReviewState } from '../review/state'
 import { formatCost, formatDuration, prLabel } from '../review/format'
 import {
@@ -12,7 +18,10 @@ import {
 } from '../review/findingsView'
 import { sessionPrefs } from '../review/sessionPrefs'
 import { dialogOpen } from '../review/keyboard'
+import { useIncrementalOffer } from '../review/useIncrementalOffer'
 import { useSettings } from '../review/useSettings'
+import { shortSha } from '../review/historyView'
+import { ComparisonPanel } from './ComparisonPanel'
 import { FindingsPanel, type FindingSelection, type FindingsWorkspace } from './FindingsPanel'
 import { Markdown } from './Markdown'
 import { PinButton } from './PinButton'
@@ -22,25 +31,19 @@ interface Props {
   state: ReviewState
   onBack: () => void
   onCancel: () => void
-  onRetry: () => void
+  /** Runs the task again; options ask for an incremental re-review. */
+  onRetry: (options?: StartReviewOptions) => void
   onPosted: (record: PostRecord) => void
+  onOverride: (key: string, value: Override | null) => void
 }
 
-// Blocking and should-fix findings that haven't been posted yet; nits are opt-in.
-function defaultSelection(findings: Findings | null, posted: Set<string>): Set<string> {
-  return new Set(
-    (findings?.findings ?? [])
-      .filter((f) => f.severity !== 'nit' && !posted.has(f.id))
-      .map((f) => f.id)
-  )
+type Tab = 'findings' | 'changes' | 'markdown'
+
+const TAB_LABELS: Record<Tab, string> = {
+  findings: 'Findings',
+  changes: 'Changes',
+  markdown: 'Full review'
 }
-
-type Tab = 'findings' | 'markdown'
-
-const TABS = [
-  ['findings', 'Findings'],
-  ['markdown', 'Full review']
-] as const
 
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -80,13 +83,17 @@ function Outcome({
   tab,
   setTab,
   selection,
-  workspace
+  workspace,
+  lifecycle,
+  onOverride
 }: {
   state: ReviewState
   tab: Tab
   setTab: (tab: Tab) => void
   selection?: FindingSelection
   workspace: FindingsWorkspace
+  lifecycle: ReadonlyMap<string, CurrentLifecycle> | null
+  onOverride?: (key: string, value: Override | null) => void
 }): React.JSX.Element | null {
   const result = state.result
   if (!result) return null
@@ -103,19 +110,21 @@ function Outcome({
     )
   }
 
+  const comparison = state.incremental?.comparison ?? null
+  const tabs: Tab[] = comparison ? ['findings', 'changes', 'markdown'] : ['findings', 'markdown']
+
   // ARIA tabs pattern: one tab stop for the group, arrow keys move between tabs.
   const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End')
       return
     e.preventDefault()
-    const next: Tab =
+    const at = Math.max(0, tabs.indexOf(tab))
+    const next =
       e.key === 'Home'
-        ? 'findings'
+        ? tabs[0]
         : e.key === 'End'
-          ? 'markdown'
-          : tab === 'findings'
-            ? 'markdown'
-            : 'findings'
+          ? tabs[tabs.length - 1]
+          : tabs[(at + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
     setTab(next)
     document.getElementById(`tab-${next}`)?.focus()
   }
@@ -123,7 +132,7 @@ function Outcome({
   return (
     <>
       <div className="tabs" role="tablist" aria-label="Review output" onKeyDown={onTabKey}>
-        {TABS.map(([id, label]) => (
+        {tabs.map((id) => (
           <button
             key={id}
             type="button"
@@ -135,7 +144,7 @@ function Outcome({
             className={tab === id ? 'is-active' : ''}
             onClick={() => setTab(id)}
           >
-            {label}
+            {TAB_LABELS[id]}
           </button>
         ))}
       </div>
@@ -145,7 +154,17 @@ function Outcome({
             findings={result.findings}
             selection={selection}
             workspace={workspace}
+            lifecycle={lifecycle}
             linkFor={(f) => githubFileUrl(state.input.prUrl, state.headSha, f.file, f.line)}
+          />
+        ) : tab === 'changes' && comparison ? (
+          <ComparisonPanel
+            comparison={comparison}
+            overrides={state.overrides}
+            headSha={state.headSha}
+            verdict={result.findings.verdict}
+            findings={result.findings.findings}
+            onOverride={onOverride}
           />
         ) : (
           <Markdown>{result.markdown}</Markdown>
@@ -160,7 +179,8 @@ export function ReviewView({
   onBack,
   onCancel,
   onRetry,
-  onPosted
+  onPosted,
+  onOverride
 }: Props): React.JSX.Element {
   const running = !isTerminal(state.phase)
   const now = useNow(running)
@@ -178,8 +198,22 @@ export function ReviewView({
     () => new Set(state.posted.flatMap((p) => p.findingIds)),
     [state.posted]
   )
+  const comparison = state.incremental?.comparison ?? null
+  const lifecycle = useMemo(
+    () => (comparison ? currentLifecycle(comparison, state.overrides) : null),
+    [comparison, state.overrides]
+  )
   const [picked, setPicked] = useState<Set<string> | null>(null)
-  const selected = picked ?? defaultSelection(findings, postedIds)
+  // Nothing is reposted by default: after an incremental review only New findings start ticked.
+  const selected = picked ?? defaultPostSelection(findings?.findings ?? [], postedIds, lifecycle)
+  // Re-run can also review just the commits since this one, when that's possible.
+  const offer = useIncrementalOffer(
+    state.phase === 'done' && !state.isReplay && state.reviewId ? state.input.prUrl : '',
+    state.reviewId ?? undefined
+  )
+  const incrementalFromHere =
+    offer?.status === 'ready' && offer.offer.available && offer.offer.parent?.id === state.reviewId
+  const [rerunOpen, setRerunOpen] = useState(false)
   // Filters only change what's shown, never what's selected; the post bar says how many
   // selected findings are currently hidden.
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
@@ -268,15 +302,51 @@ export function ReviewView({
             Cancel
           </button>
         )}
-        {state.phase === 'done' && (
+        {state.phase === 'done' && !incrementalFromHere && (
           <button
             type="button"
             className="secondary"
-            onClick={onRetry}
+            onClick={() => onRetry()}
             title="Review this PR again with the same task"
           >
             Re-run
           </button>
+        )}
+        {state.phase === 'done' && incrementalFromHere && (
+          <div
+            className="rerun-menu"
+            onKeyDown={(e) => {
+              // Esc closes the menu first; the next Esc goes back as usual.
+              if (e.key === 'Escape' && rerunOpen) {
+                e.preventDefault()
+                setRerunOpen(false)
+              }
+            }}
+          >
+            <button
+              type="button"
+              className="secondary"
+              aria-expanded={rerunOpen}
+              aria-haspopup="true"
+              onClick={() => setRerunOpen((o) => !o)}
+            >
+              Re-run <span aria-hidden="true">▾</span>
+            </button>
+            {rerunOpen && (
+              <div className="rerun-options" role="group" aria-label="Re-run">
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => onRetry({ incrementalFrom: state.reviewId! })}
+                >
+                  Changes since {shortSha(state.headSha) ?? 'this review'}
+                </button>
+                <button type="button" className="link-button" onClick={() => onRetry()}>
+                  Full re-review
+                </button>
+              </div>
+            )}
+          </div>
         )}
         <PinButton />
       </header>
@@ -284,6 +354,20 @@ export function ReviewView({
       <div className="review-body" ref={bodyRef}>
         {running && <Progress state={state} />}
 
+        {state.phase === 'done' && state.incremental?.fallbackReason && (
+          <p className="notice" role="note">
+            Ran as a full review: {state.incremental.fallbackReason}
+          </p>
+        )}
+        {state.phase === 'done' &&
+          state.incremental?.comparedSha &&
+          !state.incremental.comparison &&
+          result?.findings && (
+            <p className="notice" role="note">
+              Reviewed the changes since {shortSha(state.incremental.comparedSha)}, but the findings
+              couldn&apos;t be compared with the previous review (it may have been deleted).
+            </p>
+          )}
         {state.phase === 'done' && (
           <Outcome
             state={state}
@@ -291,6 +375,8 @@ export function ReviewView({
             setTab={setTab}
             selection={selection}
             workspace={workspace}
+            lifecycle={lifecycle}
+            onOverride={state.isReplay ? undefined : onOverride}
           />
         )}
 
@@ -299,7 +385,7 @@ export function ReviewView({
             <h2>Review failed</h2>
             <pre className="error-detail">{state.error}</pre>
             <div className="row">
-              <button type="button" className="primary" onClick={onRetry}>
+              <button type="button" className="primary" onClick={() => onRetry(state.options)}>
                 Retry
               </button>
               <button type="button" className="secondary" onClick={onBack}>
@@ -313,7 +399,7 @@ export function ReviewView({
           <section className="empty-state">
             <h2>Review cancelled</h2>
             <div className="row">
-              <button type="button" className="primary" onClick={onRetry}>
+              <button type="button" className="primary" onClick={() => onRetry(state.options)}>
                 Run again
               </button>
               <button type="button" className="secondary" onClick={onBack}>

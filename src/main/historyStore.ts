@@ -8,10 +8,11 @@ import {
 
 export const HISTORY_LIMIT = 50
 /**
- * 1: entries without `pinned`. 2: entries may be pinned. Version 1 entries are valid version 2
- * entries, so reading needs no conversion; the number tells older builds what wrote the file.
+ * 1: entries without `pinned`. 2: entries may be pinned. 3: entries may record an incremental
+ * review (`incremental`, `fallbackReason`, `overrides`). Each version's entries are valid in the
+ * next, so reading needs no conversion; the number tells older builds what wrote the file.
  */
-export const FILE_VERSION = 2
+export const FILE_VERSION = 3
 
 const KNOWN_KEYS = new Set(Object.keys(HistoryEntrySchema.shape))
 

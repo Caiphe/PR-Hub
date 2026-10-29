@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Finding, Findings, Requirement } from '@shared/findings'
 import { SEVERITIES } from '@shared/findings'
+import { LIFECYCLE_LABELS, type CurrentLifecycle } from '@shared/incremental'
 import { codeFence, languageForFile, looksLikeProse } from '@shared/markdown'
 import {
   countBySeverity,
@@ -16,7 +17,7 @@ import {
   type GroupMode
 } from '../review/findingsView'
 import { dialogOpen } from '../review/keyboard'
-import { VERDICTS } from '../review/verdict'
+import { LIFECYCLE_TONE, VERDICTS } from '../review/verdict'
 import { InlineMarkdown, Markdown } from './Markdown'
 
 const REQUIREMENT_STATUS: Record<Requirement['status'], { label: string; tone: string }> = {
@@ -48,7 +49,8 @@ function FindingCard({
   onToggle,
   headId,
   link,
-  inFileGroup
+  inFileGroup,
+  lifecycle
 }: {
   finding: Finding
   selection?: FindingSelection
@@ -58,6 +60,8 @@ function FindingCard({
   headId: string
   link: string | null
   inFileGroup: boolean
+  /** How it relates to the previous review, after an incremental review. */
+  lifecycle?: CurrentLifecycle
 }): React.JSX.Element {
   // In a file group the file is the heading, so only the line (and severity) are shown here.
   const loc = inFileGroup
@@ -103,7 +107,17 @@ function FindingCard({
             </span>
           )}
           <span className="finding-title">{finding.title}</span>
+          {lifecycle && (
+            <span className={`pill pill-${LIFECYCLE_TONE[lifecycle.status]}`}>
+              {LIFECYCLE_LABELS[lifecycle.status]}
+            </span>
+          )}
           {posted && <span className="pill pill-good">Posted</span>}
+          {!posted && lifecycle?.previouslyPosted && (
+            <span className="pill pill-muted" title="Continues a finding already posted to GitHub">
+              Posted earlier
+            </span>
+          )}
           {loc && <code className="location">{loc}</code>}
         </button>
       </div>
@@ -143,11 +157,14 @@ export function FindingsPanel({
   findings,
   selection,
   workspace,
-  linkFor
+  linkFor,
+  lifecycle
 }: {
   findings: Findings
   selection?: FindingSelection
   workspace: FindingsWorkspace
+  /** Set after an incremental review: each finding's relation to the previous review. */
+  lifecycle?: ReadonlyMap<string, CurrentLifecycle> | null
   /** GitHub link for a finding's line, or null when it can't be built. */
   linkFor?: (finding: Finding) => string | null
 }): React.JSX.Element {
@@ -463,6 +480,7 @@ export function FindingsPanel({
                       headId={headId(f.id)}
                       link={linkFor?.(f) ?? null}
                       inFileGroup={groupMode === 'file'}
+                      lifecycle={lifecycle?.get(f.id)}
                     />
                   ))}
                 </div>

@@ -1,3 +1,4 @@
+import { SHA, type CompareStatus } from '../shared/incremental'
 import { z } from 'zod'
 import type {
   GitHubProblem,
@@ -283,5 +284,30 @@ export async function inspectIssue(ref: IssueRef, deps: InspectDeps): Promise<In
     return { ok: true, issue }
   } catch (error) {
     return failure(error)
+  }
+}
+
+/**
+ * How `head` relates to `base` per GitHub's compare API ("ahead" means base is an ancestor of
+ * head). Read-only; null when it can't be read. Both must be full commit SHAs.
+ */
+export async function compareCommits(
+  ref: PrRef,
+  base: string,
+  head: string,
+  deps: InspectDeps
+): Promise<CompareStatus | null> {
+  if (!SHA.test(base) || !SHA.test(head)) return null
+  try {
+    const [data] = await getJson(`repos/${ref.owner}/${ref.repo}/compare/${base}...${head}`, deps)
+    const status = (data as { status?: unknown } | null)?.status
+    return status === 'ahead' ||
+      status === 'identical' ||
+      status === 'behind' ||
+      status === 'diverged'
+      ? status
+      : null
+  } catch {
+    return null
   }
 }

@@ -1,0 +1,49 @@
+{
+  "comment": "Dev replay only: a made-up previous review of the fixture PR, for the 'incremental' replay variant.",
+  "previousSha": "1111111111111111111111111111111111111111",
+  "headSha": "2222222222222222222222222222222222222222",
+  "previousVerdict": "request_changes",
+  "previous": [
+    {
+      "id": "p1",
+      "severity": "nit",
+      "title": "Long single-sentence inline comment",
+      "file": "index.js",
+      "line": 140,
+      "body": "The comment is accurate but hard to scan."
+    },
+    {
+      "id": "p2",
+      "severity": "blocking",
+      "title": "Counter map is never reset between calls",
+      "file": "index.js",
+      "line": 120,
+      "body": "Slugs from an earlier run leak into the next one."
+    },
+    {
+      "id": "p3",
+      "severity": "should_fix",
+      "title": "No test for repeated custom separators",
+      "file": "test.js",
+      "line": 30,
+      "body": ""
+    }
+  ],
+  "links": { "f1": "p1" },
+  "extraFindings": [
+    {
+      "id": "f2",
+      "severity": "should_fix",
+      "title": "Counter can grow without bound on long runs",
+      "file": "index.js",
+      "line": 150,
+      "body": "Each call adds an entry that is never removed."
+    }
+  ],
+  "model": [
+    { "id": "p1", "status": "still_present", "evidence": "The comment is unchanged." },
+    { "id": "p2", "status": "resolved", "evidence": "The map is now recreated per call." }
+  ],
+  "diff": "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -100,0 +101,4 @@\n+a\n+b\n+c\n+d\n@@ -120 +124 @@\n-old\n+new\n",
+  "postedPrevious": ["p1"]
+}

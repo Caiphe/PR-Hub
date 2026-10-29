@@ -29,7 +29,8 @@ vi.mock('./reviewIpc', () => ({
   reviewsDir: () => ctx.reviews
 }))
 
-const { deleteReview, exportReview, registerHistoryIpc, setPinned } = await import('./historyIpc')
+const { deleteReview, exportReview, registerHistoryIpc, setOverride, setPinned } =
+  await import('./historyIpc')
 
 const sender = {} as WebContents
 const entry = (id: string): HistoryEntry => ({
@@ -151,12 +152,76 @@ describe('setPinned', () => {
 })
 
 describe('registerHistoryIpc', () => {
-  it('registers the three history channels', () => {
+  it('registers the history channels', () => {
     registerHistoryIpc()
     expect(Object.keys(handlers).sort()).toEqual([
       'history:delete',
       'history:export',
+      'history:set-override',
       'history:set-pinned'
     ])
+  })
+})
+
+describe('setOverride', () => {
+  const item = (key: string, status: string, previous: boolean): unknown => ({
+    key,
+    status,
+    previous: previous
+      ? { id: key.slice(5), title: 'T', severity: 'nit', file: null, line: null }
+      : null,
+    currentId: previous ? null : key.slice(4),
+    suggestedId: null,
+    previousPosted: false,
+    evidence: {
+      model: null,
+      location: { kind: 'no_location', from: null, to: null },
+      similarity: null,
+      reason: 'r'
+    }
+  })
+
+  beforeEach(async () => {
+    await ctx.store.add({
+      ...entry('inc'),
+      incremental: {
+        parentId: 'keep',
+        comparedSha: 'c'.repeat(40),
+        comparison: {
+          parentId: 'keep',
+          comparedSha: 'c'.repeat(40),
+          previousVerdict: null,
+          modelCompared: true,
+          items: [
+            item('prev:u', 'unable_to_verify', true),
+            item('prev:s', 'still_present', true),
+            item('new:n', 'unable_to_verify', false)
+          ] as never
+        }
+      }
+    })
+  })
+
+  it('settles uncertain items with the values their side allows, and clears them', async () => {
+    expect((await setOverride('inc', 'prev:u', 'resolved'))?.overrides).toEqual({
+      'prev:u': 'resolved'
+    })
+    expect((await setOverride('inc', 'new:n', 'still_present'))?.overrides).toEqual({
+      'prev:u': 'resolved',
+      'new:n': 'still_present'
+    })
+    expect((await setOverride('inc', 'prev:u', null))?.overrides).toEqual({
+      'new:n': 'still_present'
+    })
+    expect((await setOverride('inc', 'new:n', null))?.overrides).toBeUndefined()
+  })
+
+  it('ignores settled items, disallowed values, unknown keys and bad ids', async () => {
+    expect((await setOverride('inc', 'prev:s', 'resolved'))?.overrides).toBeUndefined()
+    expect((await setOverride('inc', 'new:n', 'resolved'))?.overrides).toBeUndefined()
+    expect((await setOverride('inc', 'prev:x', 'resolved'))?.overrides).toBeUndefined()
+    expect(await setOverride('../inc', 'prev:u', 'resolved')).toBeNull()
+    expect(await setOverride('inc', 42, 'resolved')).toBeNull()
+    expect(await setOverride('keep', 'prev:u', 'resolved')).not.toHaveProperty('overrides')
   })
 })

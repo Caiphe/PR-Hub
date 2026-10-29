@@ -64,6 +64,42 @@ function Counts({ counts }: { counts: NonNullable<HistorySummary['counts']> }): 
   )
 }
 
+function Lineage({
+  item,
+  parentShown,
+  onOpenParent
+}: {
+  item: HistorySummary
+  parentShown: boolean
+  onOpenParent: () => void
+}): React.JSX.Element | null {
+  if (item.fallbackReason) {
+    return (
+      <span className="run-lineage" title={item.fallbackReason}>
+        Asked for changes only; ran as a full review
+      </span>
+    )
+  }
+  const inc = item.incremental
+  if (!inc) return null
+  const c = inc.counts
+  return (
+    <span className="run-lineage">
+      Changes since{' '}
+      {parentShown ? (
+        <button type="button" className="link-button" onClick={onOpenParent}>
+          <code>{shortSha(inc.comparedSha)}</code>
+        </button>
+      ) : (
+        <code>{shortSha(inc.comparedSha)}</code>
+      )}
+      {c &&
+        ` · ${c.new} new · ${c.still_present} still present · ${c.resolved} resolved` +
+          (c.unable_to_verify ? ` · ${c.unable_to_verify} to check` : '')}
+    </span>
+  )
+}
+
 function Run({
   item,
   showTitle,
@@ -73,10 +109,15 @@ function Run({
   onPin,
   onExport,
   onDelete,
-  actionsId
+  actionsId,
+  parentShown,
+  onOpenParent
 }: {
   item: HistorySummary
   showTitle: boolean
+  /** The review this one compared against is in the list, so it can be opened. */
+  parentShown: boolean
+  onOpenParent: () => void
   open: boolean
   onOpen: () => void
   onToggleActions: () => void
@@ -140,6 +181,7 @@ function Run({
           ⋯
         </button>
       </div>
+      <Lineage item={item} parentShown={parentShown} onOpenParent={onOpenParent} />
       {open && (
         <div className="run-actions" id={actionsId}>
           <button
@@ -164,10 +206,13 @@ function Run({
 function Timeline({
   timeline,
   actionsFor,
+  ids,
   ...handlers
 }: {
   timeline: PrTimeline
   actionsFor: string | null
+  /** Ids of every review in history, to know whether a parent review can be opened. */
+  ids: ReadonlySet<string>
   onOpen: (id: string) => void
   onToggleActions: (id: string) => void
   onPin: (item: HistorySummary) => void
@@ -200,6 +245,8 @@ function Timeline({
             onPin={() => handlers.onPin(item)}
             onExport={(format) => handlers.onExport(item.id, format)}
             onDelete={() => handlers.onDelete(item.id)}
+            parentShown={!!item.incremental && ids.has(item.incremental.parentId)}
+            onOpenParent={() => item.incremental && handlers.onOpen(item.incremental.parentId)}
           />
         ))}
       </ol>
@@ -246,6 +293,7 @@ export function HistoryView({
 
   const all = useMemo(() => items ?? [], [items])
   const repos = useMemo(() => repositories(all), [all])
+  const ids = useMemo(() => new Set(all.map((i) => i.id)), [all])
   const visible = useMemo(() => filterHistory(all, filters), [all, filters])
   const timelines = useMemo(() => groupByPr(visible), [visible])
   const filtering = isHistoryFiltering(filters)
@@ -476,6 +524,7 @@ export function HistoryView({
                     key={t.key}
                     timeline={t}
                     actionsFor={actionsFor}
+                    ids={ids}
                     onOpen={onOpen}
                     onToggleActions={(id) => setActionsFor((cur) => (cur === id ? null : id))}
                     onPin={(item) => void pin(item)}
