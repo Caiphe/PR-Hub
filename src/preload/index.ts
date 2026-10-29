@@ -15,6 +15,9 @@ const api: PrHubApi = {
   onReviewEvent: (listener) => subscribe<ReviewEvent>(IPC.reviewEvent, listener),
   listHistory: () => ipcRenderer.invoke(IPC.listHistory),
   getHistory: (id) => ipcRenderer.invoke(IPC.getHistory, id),
+  setHistoryPinned: (id, pinned) => ipcRenderer.invoke(IPC.setHistoryPinned, id, pinned),
+  deleteHistory: (id) => ipcRenderer.invoke(IPC.deleteHistory, id),
+  exportHistory: (id, format) => ipcRenderer.invoke(IPC.exportHistory, id, format),
   previewPost: (reviewId, findingIds, mode) =>
     ipcRenderer.invoke(IPC.previewPost, reviewId, findingIds, mode),
   post: (previewId, options) =>

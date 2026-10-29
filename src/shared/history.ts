@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { FindingsSchema } from './findings'
+import { FindingsSchema, type Finding, type Findings } from './findings'
 import { TASK_SOURCES } from './validate'
 
 // Persisted review history. Only finished reviews are saved (done or failed);
@@ -41,30 +41,64 @@ export const HistoryEntrySchema = z.object({
         submissionId: z.string().optional()
       })
     )
-    .optional()
+    .optional(),
+  /** Pinned entries are never trimmed by the history limit. Absent means not pinned. */
+  pinned: z.boolean().optional().catch(undefined)
 })
 
 export type HistoryEntry = z.infer<typeof HistoryEntrySchema>
 
-/** What the recent-reviews list needs, without the full review text. */
+type Severity = Finding['severity']
+
+// Long enough for any findings summary the reviewer writes; the cap keeps list payloads small.
+const SUMMARY_LIMIT = 600
+
+/** What the history lists need, without the full review text (loaded on demand with get). */
 export interface HistorySummary {
   id: string
   title: string
   prUrl: string
   startedAt: number
+  endedAt: number
+  durationMs: number
   status: HistoryEntry['status']
-  verdict: z.infer<typeof FindingsSchema>['verdict'] | null
+  verdict: Findings['verdict'] | null
+  /** The findings summary, shortened; empty when there are no structured findings. */
+  summary: string
   costUsd: number | null
+  headSha: string | null
+  /** Null when the review has no structured findings. */
+  counts: Record<Severity, number> | null
+  /** How many reviews were posted to GitHub from this entry, and how many distinct findings. */
+  postCount: number
+  postedFindings: number
+  pinned: boolean
 }
 
 export function summarize(entry: HistoryEntry): HistorySummary {
+  const findings = entry.result?.findings ?? null
+  let counts: HistorySummary['counts'] = null
+  if (findings) {
+    counts = { blocking: 0, should_fix: 0, nit: 0 }
+    for (const f of findings.findings) counts[f.severity]++
+  }
+  const summary = findings?.summary ?? ''
+  const posted = entry.posted ?? []
   return {
     id: entry.id,
     title: entry.input.title,
     prUrl: entry.input.prUrl,
     startedAt: entry.startedAt,
+    endedAt: entry.endedAt,
+    durationMs: entry.result?.durationMs ?? Math.max(0, entry.endedAt - entry.startedAt),
     status: entry.status,
-    verdict: entry.result?.findings?.verdict ?? null,
-    costUsd: entry.result?.costUsd ?? null
+    verdict: findings?.verdict ?? null,
+    summary: summary.length > SUMMARY_LIMIT ? `${summary.slice(0, SUMMARY_LIMIT)}…` : summary,
+    costUsd: entry.result?.costUsd ?? null,
+    headSha: entry.headSha ?? null,
+    counts,
+    postCount: posted.length,
+    postedFindings: new Set(posted.flatMap((p) => p.findingIds)).size,
+    pinned: entry.pinned === true
   }
 }

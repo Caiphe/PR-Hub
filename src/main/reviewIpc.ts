@@ -27,7 +27,7 @@ let onFinished: ReviewFinishedListener = () => {}
 /** Called when a real (non-replay) review completes or fails. */
 export type ReviewFinishedListener = (input: ReviewInput, event: ReviewEventBody) => void
 
-const reviewsDir = (): string => join(app.getPath('userData'), 'reviews')
+export const reviewsDir = (): string => join(app.getPath('userData'), 'reviews')
 
 export function getHistory(): HistoryStore {
   return history

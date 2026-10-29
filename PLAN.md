@@ -84,7 +84,7 @@ Every handler checks that the call comes from the app's own page (`src/main/ipcG
 - `review:start(input) → {ok, reviewId} | {ok:false, error}`. `input.taskSource` (`manual`/`pr`/`issue`) marks PR- or issue-derived task text as untrusted in the prompt.
 - `review:cancel(reviewId)`
 - `review:event` (main → renderer): `{reviewId, type: 'status'|'tool'|'text'|'done'|'error'|'cancelled', …}`. `done` carries `headSha` (the reviewed commit) when known, used for "Open on GitHub" links.
-- `history:list() → HistorySummary[]` · `history:get(id) → HistoryEntry | null`
+- `history:list() → HistorySummary[]` · `history:get(id) → HistoryEntry | null` · `history:set-pinned(id, pinned)` · `history:delete(id)` (native confirmation in main) · `history:export(id, format)` (native save panel in main)
 - `github:preview(reviewId, findingIds, mode) → PostPreview` · `github:post(previewId, {force?}) → PostRecord | failure` · `github:verify-post(previewId)`: a read-only marker lookup for an unclear submission
 - `github:inspect-pr(prUrl) → PrMetadata` · `github:inspect-issue(issueUrl) → IssueDetails`: read-only intake metadata (`src/main/prInspect.ts`). They use gh when it's signed in and the anonymous public API otherwise, re-validate the link in main, cache answers for 2 minutes, and return a fixed subset of cleaned, size-capped text.
 - `github:status(prUrl?) → ConnectionStatus`: read-only gh check (`--version`, `auth status`, one GET of the PR). Never writes, never returns a token. Preview/post failures carry a classified `problem` with fix-it steps (`src/main/githubErrors.ts`).

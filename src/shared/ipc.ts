@@ -17,6 +17,9 @@ export const IPC = {
   reviewEvent: 'review:event',
   listHistory: 'history:list',
   getHistory: 'history:get',
+  setHistoryPinned: 'history:set-pinned',
+  deleteHistory: 'history:delete',
+  exportHistory: 'history:export',
   previewPost: 'github:preview',
   post: 'github:post',
   verifyPost: 'github:verify-post',
@@ -38,6 +41,17 @@ export interface Settings {
 /** Dev-only fixture replay modes: the full review, markdown only, or a mid-run failure. */
 export const REPLAY_VARIANTS = ['full', 'no-findings', 'error'] as const
 export type ReplayVariant = (typeof REPLAY_VARIANTS)[number]
+
+export type HistoryExportFormat = 'markdown' | 'json'
+
+/** fileName is the saved file's name only; full paths never reach the renderer. */
+export type ExportHistoryResult =
+  | { status: 'saved'; fileName: string }
+  | { status: 'cancelled' }
+  | { status: 'failed'; error: string }
+
+/** 'missing': the entry was already gone. */
+export type DeleteHistoryResult = 'deleted' | 'cancelled' | 'missing'
 
 export type StartReviewResult = { ok: true; reviewId: string } | { ok: false; error: string }
 
@@ -72,6 +86,15 @@ export interface PrHubApi {
   /** Finished reviews, newest first. */
   listHistory(): Promise<HistorySummary[]>
   getHistory(id: string): Promise<HistoryEntry | null>
+  /** Pins (keeps past the history limit) or unpins an entry; null if it no longer exists. */
+  setHistoryPinned(id: string, pinned: boolean): Promise<HistorySummary | null>
+  /**
+   * Asks for confirmation in a native dialog, then removes the entry and its local files.
+   * Local only: nothing on GitHub changes.
+   */
+  deleteHistory(id: string): Promise<DeleteHistoryResult>
+  /** Saves one review as Markdown or JSON through a native save dialog. */
+  exportHistory(id: string, format: HistoryExportFormat): Promise<ExportHistoryResult>
   /** Builds (but doesn't send) the GitHub review for the selected findings of a saved review. */
   previewPost(reviewId: string, findingIds: string[], mode: PostMode): Promise<PreviewResult>
   /**

@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "posted-with-submission",
+      "input": {
+        "title": "Add retry to webhook sender",
+        "prUrl": "https://github.com/acme/hooks/pull/12",
+        "description": "Retry failed webhooks three times",
+        "taskSource": "issue"
+      },
+      "startedAt": 1761700000000,
+      "endedAt": 1761700180000,
+      "status": "done",
+      "result": {
+        "markdown": "## PR review\n\nLooks close.",
+        "findings": {
+          "verdict": "request_changes",
+          "summary": "Retries never back off.",
+          "requirements": [{ "text": "Retry three times", "status": "partial", "notes": null }],
+          "findings": [
+            {
+              "id": "f1",
+              "severity": "blocking",
+              "title": "No backoff",
+              "file": "src/send.ts",
+              "line": 14,
+              "body": "Tight loop"
+            },
+            {
+              "id": "f2",
+              "severity": "nit",
+              "title": "Typo",
+              "file": null,
+              "line": null,
+              "body": ""
+            }
+          ]
+        },
+        "costUsd": 0.41,
+        "durationMs": 180000,
+        "deniedTools": ["WebFetch"]
+      },
+      "error": null,
+      "headSha": "0123456789abcdef0123456789abcdef01234567",
+      "posted": [
+        {
+          "at": 1761700300000,
+          "url": "https://github.com/acme/hooks/pull/12#pullrequestreview-1",
+          "mode": "request_changes",
+          "findingIds": ["f1"],
+          "submissionId": "s-1"
+        }
+      ]
+    },
+    {
+      "id": "posted-before-submission-ids",
+      "input": {
+        "title": "Add retry to webhook sender",
+        "prUrl": "https://github.com/acme/hooks/pull/12",
+        "description": "D",
+        "taskSource": "pr"
+      },
+      "startedAt": 1761600000000,
+      "endedAt": 1761600090000,
+      "status": "done",
+      "result": {
+        "markdown": "## PR review",
+        "findings": { "verdict": "approve", "summary": "", "requirements": [], "findings": [] },
+        "costUsd": null,
+        "durationMs": 90000,
+        "deniedTools": []
+      },
+      "error": null,
+      "headSha": "fedcba9876543210fedcba9876543210fedcba98",
+      "posted": [
+        {
+          "at": 1761600100000,
+          "url": "https://github.com/acme/hooks/pull/12#pullrequestreview-0",
+          "mode": "comment",
+          "findingIds": []
+        }
+      ]
+    },
+    {
+      "id": "no-findings-block",
+      "input": {
+        "title": "Docs tweak",
+        "prUrl": "https://github.com/acme/docs/pull/3",
+        "description": "D",
+        "taskSource": "manual"
+      },
+      "startedAt": 1761500000000,
+      "endedAt": 1761500060000,
+      "status": "done",
+      "result": {
+        "markdown": "## PR review\n\nFine.",
+        "findings": null,
+        "findingsError": "No findings block",
+        "costUsd": 0.05,
+        "durationMs": 60000,
+        "deniedTools": []
+      },
+      "error": null
+    },
+    {
+      "id": "failed-before-task-sources",
+      "input": {
+        "title": "Old failure",
+        "prUrl": "https://github.com/acme/docs/pull/2",
+        "description": "D"
+      },
+      "startedAt": 1761400000000,
+      "endedAt": 1761400030000,
+      "status": "error",
+      "result": null,
+      "error": "claude exited with code 1"
+    }
+  ]
+}

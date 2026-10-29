@@ -13,14 +13,16 @@ function Badge({ item }: { item: HistorySummary }): React.JSX.Element {
 }
 
 export function RecentReviews({
-  onOpen
+  onOpen,
+  onShowAll
 }: {
   onOpen: (id: string) => void
+  /** Opens the History view (search, filters, PR timelines, export). */
+  onShowAll: () => void
 }): React.JSX.Element | null {
   const [items, setItems] = useState<HistorySummary[] | null>(null)
   // "Time ago" is measured from when the list loaded; the form view remounts often enough.
   const [now, setNow] = useState(0)
-  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -39,12 +41,12 @@ export function RecentReviews({
   }, [])
 
   if (!items || items.length === 0) return null
-  const visible = showAll ? items : items.slice(0, SHOWN)
+  const visible = items.slice(0, SHOWN)
 
   return (
     <section className="recent" aria-label="Recent reviews">
       <h2 className="section-title">Recent reviews</h2>
-      <ul className={showAll ? 'recent-list is-expanded' : 'recent-list'}>
+      <ul className="recent-list">
         {visible.map((item) => (
           <li key={item.id}>
             <button type="button" className="recent-item" onClick={() => onOpen(item.id)}>
@@ -59,11 +61,9 @@ export function RecentReviews({
           </li>
         ))}
       </ul>
-      {items.length > SHOWN && (
-        <button type="button" className="link-button small" onClick={() => setShowAll((s) => !s)}>
-          {showAll ? 'Show fewer' : `Show all ${items.length}`}
-        </button>
-      )}
+      <button type="button" className="link-button small" onClick={onShowAll}>
+        All history ({items.length})
+      </button>
     </section>
   )
 }
