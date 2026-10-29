@@ -1,7 +1,7 @@
 import type { GroupMode } from './findingsView'
 import { NO_HISTORY_FILTERS, type HistoryFilters } from './historyView'
 
-// Choices remembered while the app runs (not saved to disk; persistent settings come later).
+// View choices remembered while the app runs (not saved to disk; saved settings live in main).
 let groupMode: GroupMode = 'severity'
 // Kept so opening a review from History and coming back doesn't lose the search.
 let historyFilters: HistoryFilters = NO_HISTORY_FILTERS

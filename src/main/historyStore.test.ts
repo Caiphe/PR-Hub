@@ -224,6 +224,16 @@ describe('pinned retention', () => {
     expect(await store.add(entry('b'))).toEqual(['a', 'p'])
   })
 
+  it('reads the limit on each save, so a new retention setting applies to the next review', async () => {
+    let limit = 3
+    const store = new HistoryStore(file, () => limit)
+    for (const id of ['1', '2', '3']) await store.add(entry(id))
+    limit = 1
+    expect(await store.add(entry('4'))).toEqual(['3', '2', '1'])
+    limit = 5
+    expect(await store.add(entry('5'))).toEqual([])
+  })
+
   it('returns null when pinning a missing entry', async () => {
     expect(await new HistoryStore(file).setPinned('missing', true)).toBeNull()
   })

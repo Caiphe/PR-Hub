@@ -28,8 +28,12 @@ const api: PrHubApi = {
   inspectIssue: (issueUrl) => ipcRenderer.invoke(IPC.inspectIssue, issueUrl),
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
   setAlwaysOnTop: (pinned) => ipcRenderer.invoke(IPC.setAlwaysOnTop, pinned),
+  updateSettings: (change) => ipcRenderer.invoke(IPC.updateSettings, change),
+  restoreDefaultSettings: () => ipcRenderer.invoke(IPC.restoreSettings),
+  browserStatus: () => ipcRenderer.invoke(IPC.browserStatus),
   onSettingsChanged: (listener) => subscribe<Settings>(IPC.settingsChanged, listener),
   onNewReview: (listener) => subscribe<void>(IPC.newReview, () => listener()),
+  onOpenSettings: (listener) => subscribe<void>(IPC.openSettings, () => listener()),
   replayFixture: (variant) => ipcRenderer.invoke(IPC.replayFixture, variant)
 }
 

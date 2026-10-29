@@ -143,7 +143,7 @@ Esc clears the search, then goes back to the form.
 
 #### Retention and pinning
 
-The newest 50 unpinned reviews are kept; older ones are removed, with their folders, when a new review is saved. Pinned reviews are never removed by this and don't count towards the 50. Unpinning doesn't remove anything straight away: the next saved review trims the list.
+The newest 50 unpinned reviews are kept by default (change it in **Settings → History**, 10 to 500); older ones are removed, with their folders, when a new review is saved. Pinned reviews are never removed by this and don't count towards the limit. Lowering the limit also takes effect at the next saved review. Unpinning doesn't remove anything straight away: the next saved review trims the list.
 
 #### Export
 
@@ -199,19 +199,43 @@ Export writes one review to a file you pick in the standard save panel (Download
 
 **Delete…** asks for confirmation in a system dialog, then removes the review from `history.json` and deletes its `reviews/<id>/` folder. It only affects this Mac: reviews already posted to GitHub stay on GitHub.
 
+### Settings
+
+Open **Settings** with the sliders button in the form header, or **Settings…** in the menu-bar menu. It opens over whatever is showing, even a running review, and **←** or Esc returns there. Each change is checked and saved straight away.
+
+| Setting                  | Choices                         | Default        | Notes                                                                                                                             |
+| ------------------------ | ------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Open links in            | System default, Firefox, Chrome | System default | Your macOS default browser is never changed. See [Browser choice](#browser-choice).                                               |
+| Default review type      | Comment, Request changes        | Comment        | Preselected in the post dialog. The preview and confirmation are unchanged, and Request changes is never offered on your own PR.  |
+| Review timeout           | 5 to 60 minutes                 | 15             | A running review keeps the timeout it started with.                                                                               |
+| Model                    | A model name, or blank          | Blank          | For example `sonnet`, `opus` or `claude-sonnet-5-5`. See [Configuration](#configuration) for how it combines with `PR_HUB_MODEL`. |
+| Reviews kept             | 10 to 500                       | 50             | Pinned reviews are always kept and don't count.                                                                                   |
+| Completion notifications | On, Off                         | On             | A notification when a review finishes while the window is hidden. Also in the menu-bar menu.                                      |
+| Keep on top              | On, Off                         | Off            | Same as the pin button and the menu-bar menu.                                                                                     |
+
+Timeout and model apply to the next review. **Restore defaults…** lists exactly what will change and asks before changing anything. It doesn't touch history or the window position.
+
+There is deliberately no field for a program path or a command: PR Hub only ever runs `claude`, `gh`, `git` and macOS's `open`.
+
+#### Browser choice
+
+Links (PR links, **Open on GitHub**, posted reviews) open in the chosen browser through `open -b <bundle id>` (`org.mozilla.firefox`, `com.google.Chrome`), with the link passed as a single argument and no shell. Only `http` and `https` links without embedded credentials are opened. If the chosen browser can't be launched (not installed, removed), the link opens in your system browser instead, and Settings says so. Settings also warns when the browser isn't in `/Applications` or `~/Applications`.
+
+Builds before Settings always opened links in Firefox. An upgraded install keeps Firefox; a new install starts with System default.
+
 ### Window and shortcuts
 
-| Action                        | How                                                    |
-| ----------------------------- | ------------------------------------------------------ |
-| Show or hide the window       | Click the menu-bar icon                                |
-| New review, Keep on Top, Quit | Right-click the menu-bar icon                          |
-| Keep the window above others  | Pin button in the header (remembered between launches) |
-| Submit the form               | ⌘ Enter                                                |
-| New review (clears the form)  | ⌘ N                                                    |
-| Back / close the post dialog  | Esc                                                    |
-| Switch Findings / Full review | ← → when a tab is focused                              |
-| Next / previous finding       | J / K (or the ↓ ↑ buttons)                             |
-| Clear the findings search     | Esc in the search box                                  |
+| Action                                                 | How                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------ |
+| Show or hide the window                                | Click the menu-bar icon                                |
+| New review, Keep on Top, notifications, Settings, Quit | Right-click the menu-bar icon                          |
+| Keep the window above others                           | Pin button in the header (remembered between launches) |
+| Submit the form                                        | ⌘ Enter                                                |
+| New review (clears the form)                           | ⌘ N                                                    |
+| Back / close the post dialog                           | Esc                                                    |
+| Switch Findings / Full review                          | ← → when a tab is focused                              |
+| Next / previous finding                                | J / K (or the ↓ ↑ buttons)                             |
+| Clear the findings search                              | Esc in the search box                                  |
 
 Closing the window hides it; a running review keeps going. Quit from the menu-bar menu or with ⌘ Q, which stops any running review first.
 
@@ -231,7 +255,7 @@ Window ◀── review:event ──┘
 - **The app fetches the PR itself,** using the skill's fetch script. It passes the validated PR URL and a fixed destination as an argument list (no shell), so paths with spaces are safe and the model never picks arguments. If the fetch fails (private repo without `gh auth login`, wrong link, no network), the review stops before any model cost.
 - **Skill loading:** headless `claude -p` doesn't load claude.ai-synced skills. So the app reads `SKILL.md`, fills in its folder path, and passes it with `--append-system-prompt`.
 - **Structured output:** the prompt asks the reviewer to end with a JSON block: verdict, summary, requirements, and findings with `id`, `severity`, `file`, `line`, `body` and `suggestion`. If that block is missing or invalid, the app shows the written review with a notice and never crashes.
-- **Cancel and timeout:** both cover the fetch and the review, and kill each process group (`claude` plus anything it started). The timeout is 15 minutes.
+- **Cancel and timeout:** both cover the fetch and the review, and kill each process group (`claude` plus anything it started). The timeout is 15 minutes by default (Settings, 5 to 60).
 
 [PLAN.md](PLAN.md) has the full design, the IPC contract and the reasoning behind each choice. [PROMPTS.md](PROMPTS.md) has the step-by-step build prompts the app was developed from.
 
@@ -271,7 +295,7 @@ Everything lives in `~/Library/Application Support/PR Hub/`:
 | `history.json`              | Finished reviews: the newest 50 unpinned plus every pinned one. Task, written review, findings, cost, reviewed commit, post records |
 | `reviews/<id>/stream.jsonl` | The raw Claude Code event stream, for debugging. Deleted when the review drops out of history or is deleted. Never exported.        |
 | `reviews/<id>/pr/`          | The PR checkout, only while a review is running. Deleted when it ends.                                                              |
-| `settings.json`             | Keep-on-top setting                                                                                                                 |
+| `settings.json`             | Settings (`version: 2`); invalid or unknown values become safe defaults when read                                                   |
 | `window-state.json`         | Window size and position                                                                                                            |
 
 To remove one review, use **Delete…** in History. To clear everything, quit the app and delete that folder.
@@ -330,14 +354,16 @@ The DMG is **ad-hoc signed**: enough to run on Apple Silicon, but Gatekeeper wil
 
 ## Configuration
 
-These environment variables are mainly for development and testing:
+Day-to-day options are in [Settings](#settings). These environment variables are mainly for development and testing:
 
-| Variable           | Effect                                                                        |
-| ------------------ | ----------------------------------------------------------------------------- |
-| `PR_HUB_MODEL`     | Model for reviews, e.g. `haiku`, `sonnet` (default: your Claude Code default) |
-| `PR_HUB_SKILL_DIR` | Use this `pr-review` skill folder instead of searching `~/.claude/skills`     |
-| `PR_HUB_USER_DATA` | Use another data folder (history, settings, reviews)                          |
-| `PR_HUB_GH`        | Path to the `gh` binary to use (e.g. a test stand-in)                         |
+| Variable           | Effect                                                                       |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `PR_HUB_MODEL`     | Model for reviews when **Settings → Model** is blank, e.g. `haiku`, `sonnet` |
+| `PR_HUB_SKILL_DIR` | Use this `pr-review` skill folder instead of searching `~/.claude/skills`    |
+| `PR_HUB_USER_DATA` | Use another data folder (history, settings, reviews)                         |
+| `PR_HUB_GH`        | Path to the `gh` binary to use (e.g. a test stand-in)                        |
+
+Model precedence for a new review: **Settings → Model** if set, otherwise `PR_HUB_MODEL`, otherwise your Claude Code default. A malformed `PR_HUB_MODEL` is ignored. The timeout has no environment variable.
 
 The app finds `claude` and `gh` on your **login shell's PATH**. Apps opened from Finder get a minimal PATH, so the app asks your shell for the full one. If you can run `claude` in a new terminal window, PR Hub can find it.
 
@@ -363,7 +389,9 @@ src/
     prInspect.ts            read-only PR/issue metadata for the form (gh or public API)
     githubIpc.ts            preview/post/verify/status IPC: submissions, duplicate prevention
     ipcGuard.ts             rejects IPC calls from anything but the app's page
-    settings.ts tray.ts windowState.ts bounds.ts replay.ts
+    settings.ts             settings.json: migration, validation, atomic writes
+    externalBrowser.ts      opens links in the chosen browser (bundle id, no shell), with fallback
+    notifications.ts tray.ts windowState.ts bounds.ts replay.ts
   preload/index.ts          the typed window.api bridge
   renderer/src/             React UI
     App.tsx                 form ↔ history ↔ review view, shortcuts
@@ -402,7 +430,7 @@ The reviewer tried something outside its sandbox, such as reading a file outside
 `ELECTRON_RUN_AS_NODE=1` is set in your environment. Some editor-integrated terminals and tools set it. Run `env -u ELECTRON_RUN_AS_NODE npm run dev`, or use a plain terminal.
 
 **A review seems stuck**
-Click **Cancel**. Reviews time out after 15 minutes anyway. The raw event stream is in `reviews/<id>/stream.jsonl` in the data folder.
+Click **Cancel**. Reviews time out anyway, after 15 minutes unless you changed it in Settings. The raw event stream is in `reviews/<id>/stream.jsonl` in the data folder.
 
 ### GitHub connection
 

@@ -6,7 +6,10 @@ export interface TrayActions {
   toggleWindow: () => void
   isPinned: () => boolean
   setPinned: (pinned: boolean) => void
+  notificationsOn: () => boolean
+  setNotifications: (on: boolean) => void
   newReview: () => void
+  openSettings: () => void
 }
 
 // Menu-bar icon: left click shows/hides the window, right click opens the menu.
@@ -31,6 +34,13 @@ export function createTray(actions: TrayActions): Tray {
         checked: actions.isPinned(),
         click: (item) => actions.setPinned(item.checked)
       },
+      {
+        label: 'Completion Notifications',
+        type: 'checkbox',
+        checked: actions.notificationsOn(),
+        click: (item) => actions.setNotifications(item.checked)
+      },
+      { label: 'Settings…', click: actions.openSettings },
       { type: 'separator' },
       { label: 'Quit PR Hub', role: 'quit' }
     ])
