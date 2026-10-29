@@ -95,6 +95,12 @@ export interface BuildInput {
   commentable: Map<string, Set<number>>
   /** The PR has new commits since the review ran, so its line numbers may be stale. */
   headMoved: boolean
+  /**
+   * When headMoved: files that differ between the reviewed commit and the current head. A file
+   * not in this set is byte-for-byte the same, so its line numbers still hold. Undefined means
+   * unknown (for example after a force-push), and every finding goes in the body.
+   */
+  changedSinceReview?: ReadonlySet<string>
 }
 
 export interface BuiltReview {
@@ -111,14 +117,24 @@ export function buildReview(input: BuildInput): BuiltReview {
 
   for (const f of selected) {
     let reason: string | null = null
-    if (input.headMoved) reason = 'the PR has new commits since the review'
-    else if (!f.file || !f.line) reason = 'not tied to a specific line'
-    else if (!input.commentable.get(f.file)?.has(f.line))
+    let movedByChange = false
+    if (!f.file || !f.line) {
+      reason = 'not tied to a specific line'
+    } else if (input.headMoved && !input.changedSinceReview) {
+      reason = 'the PR has new commits since the review'
+      movedByChange = true
+    } else if (input.headMoved && input.changedSinceReview!.has(f.file)) {
+      reason = `${f.file} changed since the review, so line ${f.line} may point at different code`
+      movedByChange = true
+    } else if (!input.commentable.get(f.file)?.has(f.line)) {
       reason = `${f.file}:${f.line} is not part of the PR diff`
+    }
 
     if (reason) {
       bodyFindings.push(f)
-      inBody.push({ findingId: f.id, reason })
+      inBody.push(
+        movedByChange ? { findingId: f.id, reason, movedByChange } : { findingId: f.id, reason }
+      )
     } else {
       comments.push({ findingId: f.id, path: f.file!, line: f.line!, body: inlineCommentBody(f) })
     }

@@ -1,12 +1,19 @@
 import { z } from 'zod'
 import { FindingsSchema } from './findings'
+import { TASK_SOURCES } from './validate'
 
 // Persisted review history. Only finished reviews are saved (done or failed);
 // cancelled runs and dev fixture replays are not.
 
 export const HistoryEntrySchema = z.object({
   id: z.string().min(1),
-  input: z.object({ title: z.string(), prUrl: z.string(), description: z.string() }),
+  input: z.object({
+    title: z.string(),
+    prUrl: z.string(),
+    description: z.string(),
+    // Older entries have no source; unknown values are dropped rather than failing the entry.
+    taskSource: z.enum(TASK_SOURCES).optional().catch(undefined)
+  }),
   startedAt: z.number(),
   endedAt: z.number(),
   status: z.enum(['done', 'error']),
@@ -30,7 +37,8 @@ export const HistoryEntrySchema = z.object({
         at: z.number(),
         url: z.string(),
         mode: z.enum(['comment', 'request_changes']),
-        findingIds: z.array(z.string())
+        findingIds: z.array(z.string()),
+        submissionId: z.string().optional()
       })
     )
     .optional()

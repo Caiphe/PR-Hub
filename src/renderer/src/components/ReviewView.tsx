@@ -3,8 +3,16 @@ import type { Findings } from '@shared/findings'
 import type { PostRecord } from '@shared/github'
 import { isTerminal, type ReviewState } from '../review/state'
 import { formatCost, formatDuration, prLabel } from '../review/format'
+import {
+  filterFindings,
+  githubFileUrl,
+  NO_FILTERS,
+  type Filters,
+  type GroupMode
+} from '../review/findingsView'
+import { sessionPrefs } from '../review/sessionPrefs'
 import { dialogOpen } from '../review/keyboard'
-import { FindingsPanel, type FindingSelection } from './FindingsPanel'
+import { FindingsPanel, type FindingSelection, type FindingsWorkspace } from './FindingsPanel'
 import { Markdown } from './Markdown'
 import { PinButton } from './PinButton'
 import { PostDialog } from './PostDialog'
@@ -70,12 +78,14 @@ function Outcome({
   state,
   tab,
   setTab,
-  selection
+  selection,
+  workspace
 }: {
   state: ReviewState
   tab: Tab
   setTab: (tab: Tab) => void
   selection?: FindingSelection
+  workspace: FindingsWorkspace
 }): React.JSX.Element | null {
   const result = state.result
   if (!result) return null
@@ -130,7 +140,12 @@ function Outcome({
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === 'findings' ? (
-          <FindingsPanel findings={result.findings} selection={selection} />
+          <FindingsPanel
+            findings={result.findings}
+            selection={selection}
+            workspace={workspace}
+            linkFor={(f) => githubFileUrl(state.input.prUrl, state.headSha, f.file, f.line)}
+          />
         ) : (
           <Markdown>{result.markdown}</Markdown>
         )}
@@ -163,6 +178,25 @@ export function ReviewView({
   )
   const [picked, setPicked] = useState<Set<string> | null>(null)
   const selected = picked ?? defaultSelection(findings, postedIds)
+  // Filters only change what's shown, never what's selected; the post bar says how many
+  // selected findings are currently hidden.
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const [groupMode, setGroupModeState] = useState<GroupMode>(() => sessionPrefs.groupMode)
+  const workspace: FindingsWorkspace = {
+    filters,
+    setFilters,
+    groupMode,
+    setGroupMode: (mode) => {
+      sessionPrefs.groupMode = mode
+      setGroupModeState(mode)
+    }
+  }
+  const visibleIds = new Set(
+    filterFindings(findings?.findings ?? [], filters, { selected, posted: postedIds }).map(
+      (f) => f.id
+    )
+  )
+  const hiddenSelected = [...selected].filter((id) => !visibleIds.has(id)).length
   // Fixed when the dialog opens so its preview can't change underneath the user.
   const [dialogIds, setDialogIds] = useState<string[] | null>(null)
   const selection: FindingSelection | undefined = canPost
@@ -249,7 +283,13 @@ export function ReviewView({
         {running && <Progress state={state} />}
 
         {state.phase === 'done' && (
-          <Outcome state={state} tab={tab} setTab={setTab} selection={selection} />
+          <Outcome
+            state={state}
+            tab={tab}
+            setTab={setTab}
+            selection={selection}
+            workspace={workspace}
+          />
         )}
 
         {state.phase === 'error' && (
@@ -286,6 +326,7 @@ export function ReviewView({
         <div className="post-bar">
           <span className="muted small">
             {selected.size} of {findings!.findings.length} selected
+            {hiddenSelected > 0 && ` · ${hiddenSelected} hidden by filters`}
             {postedIds.size > 0 && ` · ${postedIds.size} posted`}
           </span>
           <button

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePrUrl, validateReviewInput } from './validate'
+import { parseIssueUrl, parsePrUrl, validateReviewInput } from './validate'
 
 describe('parsePrUrl', () => {
   it('parses a plain PR URL', () => {
@@ -40,6 +40,62 @@ describe('parsePrUrl', () => {
   it('rejects issues and non-PR pages', () => {
     expect(parsePrUrl('https://github.com/acme/web-app/issues/42')).toBeNull()
     expect(parsePrUrl('https://github.com/acme/web-app')).toBeNull()
+  })
+})
+
+describe('parsePrUrl: suffixes, forks and owners', () => {
+  it('drops every page suffix, query and anchor', () => {
+    for (const suffix of [
+      '/commits',
+      '/checks',
+      '/files/',
+      '?diff=split',
+      '#issuecomment-1',
+      '/files?w=1#r1'
+    ]) {
+      expect(parsePrUrl(`https://github.com/acme/web/pull/42${suffix}`)?.url).toBe(
+        'https://github.com/acme/web/pull/42'
+      )
+    }
+  })
+
+  it('keeps owner and repo spelling (fork owners, dots, underscores)', () => {
+    expect(parsePrUrl('https://github.com/my-fork-1/Some_Repo.js/pull/3')).toMatchObject({
+      owner: 'my-fork-1',
+      repo: 'Some_Repo.js'
+    })
+  })
+
+  it('rejects invalid owners', () => {
+    for (const owner of ['-acme', 'acme-', 'ac_me', 'a'.repeat(40), 'ac.me']) {
+      expect(parsePrUrl(`https://github.com/${owner}/web/pull/1`)).toBeNull()
+    }
+    expect(parsePrUrl(`https://github.com/${'a'.repeat(39)}/web/pull/1`)).not.toBeNull()
+  })
+
+  it('rejects repository names that would escape an API path', () => {
+    expect(parsePrUrl('https://github.com/acme/../pull/1')).toBeNull()
+    expect(parsePrUrl('https://github.com/acme/./pull/1')).toBeNull()
+  })
+
+  it('rejects numbers that are too large to be safe', () => {
+    expect(parsePrUrl('https://github.com/acme/web/pull/99999999999999999999')).toBeNull()
+  })
+})
+
+describe('parseIssueUrl', () => {
+  it('parses and canonicalizes issue links', () => {
+    expect(parseIssueUrl('https://github.com/acme/web/issues/9#issuecomment-2')).toEqual({
+      owner: 'acme',
+      repo: 'web',
+      number: 9,
+      url: 'https://github.com/acme/web/issues/9'
+    })
+  })
+
+  it('rejects PR links and bad repos', () => {
+    expect(parseIssueUrl('https://github.com/acme/web/pull/9')).toBeNull()
+    expect(parseIssueUrl('https://github.com/acme/../issues/9')).toBeNull()
   })
 })
 

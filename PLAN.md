@@ -65,13 +65,15 @@ As built (`src/main/reviewRunner.ts`). Prompt 3 set this up, and the Prompt 7 `/
 
 ### Posting to GitHub (Prompt 6, `src/main/github*.ts`)
 
-- Two steps. `github:preview` builds the exact payload, caches it, and returns it for display. `github:post` submits only a cached preview, once. The renderer never sends a payload.
+- Two steps. `github:preview` builds the exact payload, caches it, and returns it for display. `github:post` submits only a cached preview. The renderer never sends a payload, and anything besides the preview id and the `force` flag is ignored.
+- Each preview is one submission: `ready → submitting → posted`, or `uncertain` when the outcome is unclear. Its random id goes in the body as `<!-- pr-hub-submission:<uuid> -->`, the only raw HTML PR Hub sends. Failures are classified (`postFailureKind`) as retryable, needs_auth or needs_new_preview (nothing accepted; the first two can resend the same preview), or ambiguous (timeout, dropped connection, 5xx, unknown). After an ambiguous failure PR Hub never retries by itself. It lists the PR's reviews for the marker: if found, it records the post; if not, the user decides. A later `post` on an uncertain submission looks again before sending, and `force` (an explicit "Post anyway") skips that only when the check itself fails. A posted submission answers repeat posts with its record.
 - One `POST /repos/{o}/{r}/pulls/{n}/reviews` via `gh api`, with `event` set to `COMMENT` or `REQUEST_CHANGES`.
 - Inline comments only go on lines that are in the PR diff, computed from the `/files` patches. GitHub rejects the whole review otherwise. Other findings go in the review body, and the dialog says why for each one.
-- Comments are anchored to the head commit the review saw (recorded in history as `headSha`). If the PR has new commits since, or that commit is unknown, every finding goes in the body.
+- Comments are anchored to the PR's current head. The line numbers come from the commit the review saw (`headSha` in history). If the head moved, `compare/<reviewed>...<head>` lists the files that changed: findings in other files keep their lines, and findings in changed files go in the body, marked `movedByChange`. If that list is unknown (force-push, 300+ files) or the reviewed commit wasn't recorded, every finding goes in the body.
+- Request changes on the user's own PR is refused before sending (`ownPr` from the PR author).
 - ` ```suggestion ` is used only for one-line code. Multi-line fixes go in plain code blocks, because GitHub would replace just one line. Text that looks like prose is never posted as a suggestion (the prompt also forbids it).
 - Outside code, `@mentions` are neutralized and `<` is escaped (no raw HTML such as hidden `<!-- -->` comments), since review text is partly derived from untrusted PR content.
-- Once GitHub accepts a post it counts as posted, even if recording it locally fails, so a retry can't create a duplicate.
+- Once GitHub accepts a post it counts as posted, even if recording it locally fails. Records carry the submission id, so a recovered or repeated confirmation is stored once (`addPostRecord`, and the renderer reducer).
 - Successful posts are recorded on the history entry (`posted`), and those findings show a "Posted" badge.
 - `PR_HUB_GH` points at a different `gh` binary. The stand-in used for testing serves fixtures and saves POST bodies instead of sending them.
 
@@ -79,10 +81,13 @@ As built (`src/main/reviewRunner.ts`). Prompt 3 set this up, and the Prompt 7 `/
 
 Every handler checks that the call comes from the app's own page (`src/main/ipcGuard.ts`), and the window can't navigate away from it.
 
-- `review:start(input) → {ok, reviewId} | {ok:false, error}` · `review:cancel(reviewId)`
-- `review:event` (main → renderer): `{reviewId, type: 'status'|'tool'|'text'|'done'|'error'|'cancelled', …}`
+- `review:start(input) → {ok, reviewId} | {ok:false, error}`. `input.taskSource` (`manual`/`pr`/`issue`) marks PR- or issue-derived task text as untrusted in the prompt.
+- `review:cancel(reviewId)`
+- `review:event` (main → renderer): `{reviewId, type: 'status'|'tool'|'text'|'done'|'error'|'cancelled', …}`. `done` carries `headSha` (the reviewed commit) when known, used for "Open on GitHub" links.
 - `history:list() → HistorySummary[]` · `history:get(id) → HistoryEntry | null`
-- `github:preview(reviewId, findingIds, mode) → PostPreview` · `github:post(previewId) → PostRecord`
+- `github:preview(reviewId, findingIds, mode) → PostPreview` · `github:post(previewId, {force?}) → PostRecord | failure` · `github:verify-post(previewId)`: a read-only marker lookup for an unclear submission
+- `github:inspect-pr(prUrl) → PrMetadata` · `github:inspect-issue(issueUrl) → IssueDetails`: read-only intake metadata (`src/main/prInspect.ts`). They use gh when it's signed in and the anonymous public API otherwise, re-validate the link in main, cache answers for 2 minutes, and return a fixed subset of cleaned, size-capped text.
+- `github:status(prUrl?) → ConnectionStatus`: read-only gh check (`--version`, `auth status`, one GET of the PR). Never writes, never returns a token. Preview/post failures carry a classified `problem` with fix-it steps (`src/main/githubErrors.ts`).
 - `settings:get` · `settings:set-always-on-top` · `settings:changed` (main → renderer)
 - `app:new-review` (main → renderer, from the menu-bar menu)
 - `dev:replay-fixture(variant)` (development builds only)

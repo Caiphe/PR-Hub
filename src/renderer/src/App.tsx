@@ -5,6 +5,7 @@ import { PinButton } from './components/PinButton'
 import { RecentReviews } from './components/RecentReviews'
 import { ReviewForm } from './components/ReviewForm'
 import { ReviewView } from './components/ReviewView'
+import { BrandMark } from './components/InterfaceIcons'
 import { dialogOpen } from './review/keyboard'
 import { isTerminal } from './review/state'
 import { useReview } from './review/useReview'
@@ -78,9 +79,12 @@ function App(): React.JSX.Element {
   return (
     <main className="shell">
       <header className="app-header">
-        <div>
-          <h1>PR Hub</h1>
-          <p className="muted">Review a pull request against its task.</p>
+        <div className="brand-lockup">
+          <BrandMark />
+          <div>
+            <h1>PR Hub</h1>
+            <p className="muted">Review a pull request against its task.</p>
+          </div>
         </div>
         <PinButton />
       </header>

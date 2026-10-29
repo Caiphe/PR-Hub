@@ -17,7 +17,12 @@ const api: PrHubApi = {
   getHistory: (id) => ipcRenderer.invoke(IPC.getHistory, id),
   previewPost: (reviewId, findingIds, mode) =>
     ipcRenderer.invoke(IPC.previewPost, reviewId, findingIds, mode),
-  post: (previewId) => ipcRenderer.invoke(IPC.post, previewId),
+  post: (previewId, options) =>
+    ipcRenderer.invoke(IPC.post, previewId, { force: options?.force === true }),
+  verifyPost: (previewId) => ipcRenderer.invoke(IPC.verifyPost, previewId),
+  githubStatus: (prUrl) => ipcRenderer.invoke(IPC.githubStatus, prUrl),
+  inspectPr: (prUrl) => ipcRenderer.invoke(IPC.inspectPr, prUrl),
+  inspectIssue: (issueUrl) => ipcRenderer.invoke(IPC.inspectIssue, issueUrl),
   getSettings: () => ipcRenderer.invoke(IPC.getSettings),
   setAlwaysOnTop: (pinned) => ipcRenderer.invoke(IPC.setAlwaysOnTop, pinned),
   onSettingsChanged: (listener) => subscribe<Settings>(IPC.settingsChanged, listener),

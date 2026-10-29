@@ -20,6 +20,8 @@ export interface ReviewState {
   fromHistory: boolean
   /** Reviews posted to GitHub from this result. */
   posted: PostRecord[]
+  /** The PR commit that was reviewed, when known; used to link findings to GitHub. */
+  headSha: string | null
   reviewId: string | null
   phase: Phase
   steps: Step[]
@@ -62,7 +64,13 @@ function applyEvent(state: ReviewState, event: ReviewEvent, now: number): Review
     case 'text':
       return { ...state, phase: 'running', lastText: event.text }
     case 'done':
-      return { ...state, phase: 'done', result: event.result, endedAt: now }
+      return {
+        ...state,
+        phase: 'done',
+        result: event.result,
+        headSha: event.headSha ?? null,
+        endedAt: now
+      }
     case 'error':
       return { ...state, phase: 'error', error: event.message, endedAt: now }
     case 'cancelled':
@@ -79,6 +87,7 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       isReplay: action.isReplay ?? false,
       fromHistory: false,
       posted: [],
+      headSha: null,
       reviewId: null,
       phase: 'starting',
       steps: [],
@@ -98,6 +107,7 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       isReplay: false,
       fromHistory: true,
       posted: entry.posted ?? [],
+      headSha: entry.headSha ?? null,
       reviewId: entry.id,
       phase: entry.status,
       steps: [],
@@ -122,8 +132,12 @@ export function reviewReducer(state: ReviewState | null, action: ReviewAction): 
       const base: ReviewState = { ...state, reviewId: action.reviewId, pending: [] }
       return mine.reduce((s, e) => applyEvent(s, e, action.now), base)
     }
-    case 'posted':
+    case 'posted': {
+      // A recovered or repeated confirmation of the same submission is recorded once.
+      const id = action.record.submissionId
+      if (id && state.posted.some((p) => p.submissionId === id)) return state
       return { ...state, posted: [...state.posted, action.record] }
+    }
     case 'startFailed':
       if (action.requestId !== state.requestId) return state
       return { ...state, phase: 'error', error: action.error, endedAt: action.now }

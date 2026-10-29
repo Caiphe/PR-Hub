@@ -1,6 +1,13 @@
 // Typed IPC contract shared by main, preload and renderer. See PLAN.md "IPC contract".
 import type { Findings } from './findings'
-import type { PostMode, PostResult, PreviewResult } from './github'
+import type {
+  ConnectionStatus,
+  InspectIssueResult,
+  InspectPrResult,
+  PostMode,
+  PostResult,
+  PreviewResult
+} from './github'
 import type { HistoryEntry, HistorySummary } from './history'
 import type { ReviewInput } from './validate'
 
@@ -12,6 +19,10 @@ export const IPC = {
   getHistory: 'history:get',
   previewPost: 'github:preview',
   post: 'github:post',
+  verifyPost: 'github:verify-post',
+  githubStatus: 'github:status',
+  inspectPr: 'github:inspect-pr',
+  inspectIssue: 'github:inspect-issue',
   getSettings: 'settings:get',
   setAlwaysOnTop: 'settings:set-always-on-top',
   settingsChanged: 'settings:changed',
@@ -46,7 +57,8 @@ export type ReviewEventBody =
   | { type: 'status'; message: string }
   | { type: 'tool'; tool: string; label: string }
   | { type: 'text'; text: string }
-  | { type: 'done'; result: ReviewResult }
+  /** headSha: the PR commit that was reviewed, when the app could read it. */
+  | { type: 'done'; result: ReviewResult; headSha?: string }
   | { type: 'error'; message: string }
   | { type: 'cancelled' }
 
@@ -62,8 +74,23 @@ export interface PrHubApi {
   getHistory(id: string): Promise<HistoryEntry | null>
   /** Builds (but doesn't send) the GitHub review for the selected findings of a saved review. */
   previewPost(reviewId: string, findingIds: string[], mode: PostMode): Promise<PreviewResult>
-  /** Submits a preview exactly as shown. Each preview can be posted once. */
-  post(previewId: string): Promise<PostResult>
+  /**
+   * Submits a preview exactly as shown; a preview can only ever become one review. After an
+   * unclear outcome it first looks for the review on GitHub. `force` sends even when that check
+   * fails, and is only for an explicit "post anyway" decision.
+   */
+  post(previewId: string, options?: { force?: boolean }): Promise<PostResult>
+  /** Looks for an unclear submission on GitHub. Read-only. */
+  verifyPost(previewId: string): Promise<PostResult>
+  /**
+   * Read-only check of the gh login and, when a PR link is given, whether that PR can be read.
+   * Never writes to GitHub and never returns a token.
+   */
+  githubStatus(prUrl?: string): Promise<ConnectionStatus>
+  /** Read-only PR metadata for the intake form. Works for public PRs without a gh login. */
+  inspectPr(prUrl: string): Promise<InspectPrResult>
+  /** Title and body of an issue the user chose as the task. Read-only. */
+  inspectIssue(issueUrl: string): Promise<InspectIssueResult>
   getSettings(): Promise<Settings>
   setAlwaysOnTop(pinned: boolean): Promise<Settings>
   /** Settings changed elsewhere (e.g. the menu-bar menu); returns an unsubscribe function. */

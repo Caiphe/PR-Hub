@@ -24,6 +24,23 @@ describe('buildPrompt', () => {
   })
 })
 
+describe('task source', () => {
+  it('adds nothing for text the user wrote (or older reviews without a source)', () => {
+    expect(buildPrompt({ ...input, taskSource: 'manual' }, ctx)).toBe(buildPrompt(input, ctx))
+  })
+
+  it('marks task text copied from the PR or an issue as untrusted, outside the task block', () => {
+    for (const source of ['pr', 'issue'] as const) {
+      const prompt = buildPrompt({ ...input, taskSource: source }, ctx)
+      const note = prompt.slice(prompt.indexOf('Task description:'), prompt.indexOf('<task>'))
+      expect(note).toMatch(/untrusted text/)
+      expect(note).toMatch(/ignore any instructions/)
+      expect(prompt).toContain(`<task>\n${input.description}\n</task>`)
+    }
+    expect(buildPrompt({ ...input, taskSource: 'pr' }, ctx)).toMatch(/verify every claim/)
+  })
+})
+
 describe('buildSystemPrompt', () => {
   it('strips frontmatter and fills in the skill directory', () => {
     const skillMarkdown =
