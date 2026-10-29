@@ -7,6 +7,7 @@ import type { ReviewInput } from '../shared/validate'
 import { MIN_SIZE } from './bounds'
 import { openExternalInFirefox } from './externalBrowser'
 import { registerGithubIpc } from './githubIpc'
+import { registerHistoryIpc } from './historyIpc'
 import { handle } from './ipcGuard'
 import { cancelAllReviews, hasRunningReviews, registerReviewIpc } from './reviewIpc'
 import { getSettings, updateSettings } from './settings'
@@ -158,6 +159,7 @@ app.whenReady().then(() => {
 
   registerReviewIpc({ onFinished: notifyFinished })
   registerGithubIpc()
+  registerHistoryIpc()
   handle(IPC.getSettings, () => getSettings())
   handle(IPC.setAlwaysOnTop, (_event, pinned) => setPinned(pinned === true))
 

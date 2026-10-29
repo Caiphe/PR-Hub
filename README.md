@@ -129,7 +129,75 @@ Until an unclear post is resolved, the review type can't be changed. A new previ
 
 ### History
 
-The form lists recent reviews with their verdict. Click one to reopen it read-only. **Re-run** reviews the PR again with the same task, and **←** returns to the form with that task filled in. The last 50 finished reviews are kept.
+The form lists your three most recent reviews with their verdict. Click one to reopen it read-only. **Re-run** reviews the PR again with the same task, and **←** returns to the form with that task filled in.
+
+**All history** (under the recent list) opens the History view:
+
+- **Search** by task title, `owner/repo`, PR number (`#12` or `owner/repo#12`) or the review summary. Every word must match.
+- **Filters** narrow by verdict (including _No verdict_ for failed reviews and reviews without structured findings), status, posted or not, pinned, repository, and a date range. Dates are inclusive and in your local time. Filters combine, and the count shows how many reviews match. Search and filters are kept while the app runs, so opening a review and coming back doesn't lose them.
+- **PR timelines**: repeat reviews of the same PR are grouped, newest first. Each run shows its date, reviewed commit, duration, cost, verdict, blocking / should-fix / nit counts and whether it was posted. Click a run to open it; **←** from there returns to History.
+- **Pin** (the star) keeps a review past the history limit.
+- **⋯** on a run offers **Export Markdown**, **Export JSON** and **Delete…**.
+
+Esc clears the search, then goes back to the form.
+
+#### Retention and pinning
+
+The newest 50 unpinned reviews are kept; older ones are removed, with their folders, when a new review is saved. Pinned reviews are never removed by this and don't count towards the 50. Unpinning doesn't remove anything straight away: the next saved review trims the list.
+
+#### Export
+
+Export writes one review to a file you pick in the standard save panel (Downloads is suggested). The panel asks before replacing an existing file. Exports contain what history holds for that review: the task, PR link and reviewed commit, verdict, summary, requirements, findings, the full written review, any error, and post records. They never contain the raw Claude event stream, PR Hub's internal submission ids, or blocked tool names, and anything token-like is replaced with `[redacted]`.
+
+- **Markdown**: a readable report (`pr-hub-<owner>-<repo>-<number>-<date>.md`).
+- **JSON**: structured data for scripts, in this shape (`version` changes only when a field changes meaning or is removed):
+
+```jsonc
+{
+  "format": "pr-hub-review",
+  "version": 1,
+  "exportedAt": "2026-10-29T12:00:00.000Z", // ISO 8601, UTC
+  "review": {
+    "id": "…",
+    "status": "done", // or "error"
+    "startedAt": "…",
+    "endedAt": "…", // ISO 8601, UTC
+    "durationMs": 180000,
+    "costUsd": 0.41, // null when unknown
+    "pinned": false,
+    "task": { "title": "…", "description": "…", "source": "manual" }, // source: manual | pr | issue | null (older reviews)
+    "pullRequest": {
+      "url": "…",
+      "owner": "acme",
+      "repo": "hooks",
+      "number": 12,
+      "reviewedCommit": "<40-char SHA> or null"
+    },
+    "verdict": "request_changes", // approve | approve_with_suggestions | request_changes | null
+    "summary": "…", // null without structured findings
+    "requirements": [{ "text": "…", "status": "partial", "notes": "…" }],
+    "findings": [
+      {
+        "id": "f1",
+        "severity": "blocking",
+        "title": "…",
+        "file": "src/a.ts",
+        "line": 14,
+        "body": "…",
+        "suggestion": "…"
+      }
+    ],
+    "findingsError": null, // why structured findings are missing, when they are
+    "markdown": "…", // the full written review; null for a failed review
+    "error": null, // the failure message for a failed review
+    "posted": [{ "at": "…", "url": "…", "mode": "comment", "findingIds": ["f1"] }]
+  }
+}
+```
+
+#### Delete
+
+**Delete…** asks for confirmation in a system dialog, then removes the review from `history.json` and deletes its `reviews/<id>/` folder. It only affects this Mac: reviews already posted to GitHub stay on GitHub.
 
 ### Window and shortcuts
 
@@ -198,15 +266,17 @@ claude -p --tools "Read Grep Glob Bash" --permission-mode dontAsk   (no allow ru
 
 Everything lives in `~/Library/Application Support/PR Hub/`:
 
-| Path                        | Contents                                                                                              |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `history.json`              | The last 50 finished reviews: task, written review, findings, cost, reviewed commit, and post records |
-| `reviews/<id>/stream.jsonl` | The raw Claude Code event stream, for debugging. Deleted when the review drops out of history.        |
-| `reviews/<id>/pr/`          | The PR checkout, only while a review is running. Deleted when it ends.                                |
-| `settings.json`             | Keep-on-top setting                                                                                   |
-| `window-state.json`         | Window size and position                                                                              |
+| Path                        | Contents                                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `history.json`              | Finished reviews: the newest 50 unpinned plus every pinned one. Task, written review, findings, cost, reviewed commit, post records |
+| `reviews/<id>/stream.jsonl` | The raw Claude Code event stream, for debugging. Deleted when the review drops out of history or is deleted. Never exported.        |
+| `reviews/<id>/pr/`          | The PR checkout, only while a review is running. Deleted when it ends.                                                              |
+| `settings.json`             | Keep-on-top setting                                                                                                                 |
+| `window-state.json`         | Window size and position                                                                                                            |
 
-To clear everything, quit the app and delete that folder.
+To remove one review, use **Delete…** in History. To clear everything, quit the app and delete that folder.
+
+`history.json` is versioned (`version: 2` since pinning; version 1 files are read as they are). Reading is tolerant: an entry this build can't parse, such as one written by a newer version, is hidden but kept in the file, and fields it doesn't know on readable entries are written back unchanged. If the whole file is unreadable it's moved aside as `history.json.corrupt-<time>` rather than overwritten. Writes go to a temporary file that's renamed into place, so a crash never leaves half a file.
 
 ## Development
 
@@ -283,7 +353,9 @@ src/
     extractFindings.ts      pulls and validates the findings JSON block
     environment.ts          login-shell PATH, finding claude, finding the skill
     reviewIpc.ts            review and history IPC, saving finished reviews, folder cleanup
-    historyStore.ts         history.json: crash-safe writes, queued updates, last 50
+    historyStore.ts         history.json: versioned, tolerant reads, crash-safe writes, pinned-aware retention
+    historyIpc.ts           pin, delete (with confirmation) and export (save panel) for saved reviews
+    historyExport.ts        one review → Markdown or the documented JSON export, redacted
     githubReview.ts         findings → GitHub review payload (diff lines, suggestions, sanitizing)
     githubPoster.ts         gh CLI: auth status, PR head/files, compare, review lookup, submit
     githubErrors.ts         gh/GitHub failures → specific guidance; token redaction
@@ -294,14 +366,14 @@ src/
     settings.ts tray.ts windowState.ts bounds.ts replay.ts
   preload/index.ts          the typed window.api bridge
   renderer/src/             React UI
-    App.tsx                 form ↔ review view, shortcuts
-    components/             ReviewForm, PrSummary, ReviewView, FindingsPanel, PostDialog, …
+    App.tsx                 form ↔ history ↔ review view, shortcuts
+    components/             ReviewForm, PrSummary, ReviewView, FindingsPanel, PostDialog, HistoryView, …
     review/                 reducer (state.ts), useReview hook, intake rules, formatting helpers
   shared/                   types and pure code used by both sides
     ipc.ts                  IPC channels and API types (source of truth)
     findings.ts history.ts github.ts validate.ts markdown.ts
 scripts/                    review-cli.ts, render-icons.mjs
-fixtures/                   recorded review stream, GitHub API responses
+fixtures/                   recorded review stream, GitHub API responses, history file shapes
 ```
 
 Tests sit next to the code as `*.test.ts`.

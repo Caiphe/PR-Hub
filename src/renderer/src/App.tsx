@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { REPLAY_VARIANTS, type ReplayVariant } from '@shared/ipc'
 import type { ReviewInput } from '@shared/validate'
+import { HistoryView } from './components/HistoryView'
 import { PinButton } from './components/PinButton'
 import { RecentReviews } from './components/RecentReviews'
 import { ReviewForm } from './components/ReviewForm'
@@ -22,6 +23,8 @@ function App(): React.JSX.Element {
   const [lastInput, setLastInput] = useState<ReviewInput | undefined>()
   // Bumped to remount (and so clear) the form for a new review.
   const [formKey, setFormKey] = useState(0)
+  // The History view replaces the form; a review opened from it returns there on back.
+  const [view, setView] = useState<'form' | 'history'>('form')
 
   const newReview = (): void => {
     const state = review.state
@@ -34,6 +37,7 @@ function App(): React.JSX.Element {
       return
     }
     review.reset()
+    setView('form')
     setLastInput(undefined)
     setFormKey((k) => k + 1)
   }
@@ -65,8 +69,9 @@ function App(): React.JSX.Element {
         key={review.state.requestId}
         state={review.state}
         onBack={() => {
-          // Back from a saved review pre-fills the form with that task, ready to edit or re-run.
-          if (review.state?.fromHistory) setLastInput(review.state.input)
+          // Back from a saved review pre-fills the form with that task, ready to edit or re-run
+          // (or returns to History, when it was opened there).
+          if (review.state?.fromHistory && view === 'form') setLastInput(review.state.input)
           review.reset()
         }}
         onCancel={review.cancel}
@@ -74,6 +79,10 @@ function App(): React.JSX.Element {
         onPosted={review.markPosted}
       />
     )
+  }
+
+  if (view === 'history') {
+    return <HistoryView onBack={() => setView('form')} onOpen={(id) => void review.open(id)} />
   }
 
   return (
@@ -96,7 +105,7 @@ function App(): React.JSX.Element {
           review.start(input)
         }}
       />
-      <RecentReviews onOpen={(id) => void review.open(id)} />
+      <RecentReviews onOpen={(id) => void review.open(id)} onShowAll={() => setView('history')} />
       {import.meta.env.DEV && (
         <p className="dev-tools muted small">
           Dev · replay fixture:{' '}
