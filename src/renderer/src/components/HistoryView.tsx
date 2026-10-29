@@ -297,7 +297,10 @@ export function HistoryView({
       setItems((list) => list?.filter((i) => i.id !== id) ?? null)
       setActionsFor(null)
       setMessage('Review deleted from this Mac.')
-    } else if (res === null) {
+    } else if (res === 'cancelled') {
+      // Dismissing the dialog closes the actions too, so nothing is left half-open.
+      setActionsFor(null)
+    } else {
       setMessage("Couldn't delete the review.")
     }
   }
