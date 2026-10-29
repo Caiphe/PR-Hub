@@ -12,7 +12,7 @@ import {
   type ReviewEventBody,
   type StartReviewResult
 } from '../shared/ipc'
-import { parsePrUrl, validateReviewInput, type ReviewInput } from '../shared/validate'
+import { parsePrUrl, TASK_SOURCES, validateReviewInput, type ReviewInput } from '../shared/validate'
 import { loadSkill, resolveReviewEnvironment, type ReviewEnvironment } from './environment'
 import { HistoryStore } from './historyStore'
 import { handle } from './ipcGuard'
@@ -70,12 +70,15 @@ async function finishReview(
   input: ReviewInput,
   startedAt: number,
   event: ReviewEventBody
-): Promise<void> {
+): Promise<string | undefined> {
   const workDir = join(reviewsDir(), reviewId)
-  if (event.type === 'cancelled') return removeDir(workDir)
+  if (event.type === 'cancelled') {
+    await removeDir(workDir)
+    return undefined
+  }
   const headSha = await readReviewedHead(join(workDir, 'pr/repo'))
   await removeDir(join(workDir, 'pr'))
-  if (event.type !== 'done' && event.type !== 'error') return
+  if (event.type !== 'done' && event.type !== 'error') return headSha
 
   const entry: HistoryEntry = {
     id: reviewId,
@@ -89,6 +92,7 @@ async function finishReview(
   }
   const trimmed = await history.add(entry)
   await Promise.all(trimmed.map((id) => removeDir(join(reviewsDir(), id))))
+  return headSha
 }
 
 async function startReview(sender: WebContents, raw: unknown): Promise<StartReviewResult> {
@@ -97,7 +101,9 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
   const input: ReviewInput = {
     title: String(candidate.title ?? '').trim(),
     prUrl: String(candidate.prUrl ?? '').trim(),
-    description: String(candidate.description ?? '').trim()
+    description: String(candidate.description ?? '').trim(),
+    // Anything unrecognized counts as written by the user.
+    taskSource: TASK_SOURCES.find((s) => s === candidate.taskSource) ?? 'manual'
   }
   const errors = validateReviewInput(input)
   if (Object.keys(errors).length > 0) return { ok: false, error: Object.values(errors)[0]! }
@@ -124,9 +130,14 @@ async function startReview(sender: WebContents, raw: unknown): Promise<StartRevi
         // Save before telling the renderer, so actions on the finished review (like posting
         // to GitHub, which reads it from history) can't race the write.
         finishReview(reviewId, input, startedAt, body)
-          .catch((error) => console.error('Failed to record review', error))
-          .finally(() => {
-            send(sender, { ...body, reviewId })
+          .catch((error) => {
+            console.error('Failed to record review', error)
+            return undefined
+          })
+          .then((headSha) => {
+            // The reviewed commit lets the window link findings to the exact lines on GitHub.
+            const out = body.type === 'done' && headSha ? { ...body, headSha } : body
+            send(sender, { ...out, reviewId })
             if (body.type !== 'cancelled') onFinished(input, body)
           })
       }

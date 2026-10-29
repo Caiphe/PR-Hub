@@ -17,15 +17,22 @@ const HEAD = 'a'.repeat(40)
 const gh = vi.hoisted(() => ({
   fetchPrState: vi.fn(),
   submitReview: vi.fn(),
-  ghAccount: vi.fn(async () => 'reviewer')
+  ghAccount: vi.fn(async (): Promise<{ login: string; tokenKind?: string }> => ({
+    login: 'reviewer'
+  })),
+  checkConnection: vi.fn()
 }))
 vi.mock('./githubPoster', async (orig) => ({
   ...(await orig<typeof import('./githubPoster')>()),
   resolveGh: async () => '/fake/gh',
+  findGh: async () => '/fake/gh',
   ghAccount: gh.ghAccount,
   fetchPrState: gh.fetchPrState,
   submitReview: gh.submitReview
 }))
+
+vi.mock('./githubHealth', () => ({ checkConnection: gh.checkConnection }))
+vi.mock('./environment', () => ({ resolveChildEnv: async () => ({}) }))
 
 const store = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }))
 vi.mock('./reviewIpc', () => ({
@@ -107,7 +114,21 @@ describe('github preview', () => {
 
   it('surfaces gh failures that are not about auth as themselves', async () => {
     gh.ghAccount.mockRejectedValueOnce(new GhError('GitHub: HTTP 503', false))
-    expect(await preview()).toEqual({ ok: false, error: 'GitHub: HTTP 503', needsAuth: false })
+    expect(await preview()).toMatchObject({
+      ok: false,
+      error: 'GitHub: HTTP 503',
+      needsAuth: false,
+      problem: { kind: 'server_error' }
+    })
+  })
+
+  it('warns before posting with a fine-grained token', async () => {
+    gh.ghAccount.mockResolvedValueOnce({ login: 'reviewer', tokenKind: 'fine_grained_pat' })
+    const res = await preview()
+    expect(res.ok && res.preview.account).toBe('reviewer')
+    expect(res.ok && res.preview.warnings[0]).toMatch(
+      /fine-grained token.*sindresorhus\/slugify with Pull requests: Read and write/
+    )
   })
 })
 
@@ -115,8 +136,10 @@ describe('github post', () => {
   it('submits each preview at most once', async () => {
     const res = await preview()
     if (!res.ok) throw new Error('preview failed')
-    expect((await post(res.preview.previewId)).ok).toBe(true)
-    expect((await post(res.preview.previewId)).ok).toBe(false)
+    const first = await post(res.preview.previewId)
+    expect(first.ok).toBe(true)
+    // A repeat returns the same record instead of posting again.
+    expect(await post(res.preview.previewId)).toEqual(first)
     expect(gh.submitReview).toHaveBeenCalledTimes(1)
   })
 
@@ -129,6 +152,21 @@ describe('github post', () => {
     expect(gh.submitReview).not.toHaveBeenCalled()
   })
 
+  it('explains a fine-grained token 403 on post as a Pull requests permission problem', async () => {
+    gh.ghAccount.mockResolvedValueOnce({ login: 'reviewer', tokenKind: 'fine_grained_pat' })
+    gh.submitReview.mockRejectedValueOnce(
+      new GhError(
+        'GitHub: gh: Resource not accessible by personal access token (HTTP 403)',
+        false,
+        'gh: Resource not accessible by personal access token (HTTP 403)'
+      )
+    )
+    const res = await preview()
+    if (!res.ok) throw new Error('preview failed')
+    const posted = await post(res.preview.previewId)
+    expect(posted).toMatchObject({ ok: false, problem: { kind: 'pull_requests_permission' } })
+  })
+
   it('reports success when GitHub accepted the post even if recording it fails', async () => {
     store.update.mockRejectedValueOnce(new Error('disk full'))
     const res = await preview()
@@ -136,5 +174,26 @@ describe('github post', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const posted = await post(res.preview.previewId)
     expect(posted).toMatchObject({ ok: true, record: { findingIds: ['f1'], mode: 'comment' } })
+  })
+})
+
+describe('github status', () => {
+  const status = (url: unknown): Promise<unknown> =>
+    handlers[IPC.githubStatus]({}, url) as Promise<unknown>
+
+  it('passes on only a canonical, valid PR link', async () => {
+    gh.checkConnection.mockResolvedValue({})
+    await status('https://github.com/a/b/pull/3/files#diff')
+    expect(gh.checkConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ gh: '/fake/gh', prUrl: 'https://github.com/a/b/pull/3' })
+    )
+    await status('https://evil.example/pull/3')
+    expect(gh.checkConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ prUrl: undefined })
+    )
+    await status({ toString: () => 'x' })
+    expect(gh.checkConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ prUrl: undefined })
+    )
   })
 })

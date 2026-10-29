@@ -102,6 +102,25 @@ describe('reviewReducer', () => {
     expect(reviewReducer(s, ev({ type: 'error', message: 'x' }, 'old'))?.phase).toBe('done')
   })
 
+  it('records the reviewed commit, from the done event or from history', () => {
+    const sha = 'c'.repeat(40)
+    expect(run(start, started, ev({ type: 'done', result, headSha: sha }))?.headSha).toBe(sha)
+    expect(run(start, started, ev({ type: 'done', result }))?.headSha).toBeNull()
+    const entry = {
+      id: 'old',
+      input,
+      startedAt: 1,
+      endedAt: 2,
+      status: 'done' as const,
+      result,
+      error: null
+    }
+    expect(run({ type: 'open', requestId: 2, entry: { ...entry, headSha: sha } })?.headSha).toBe(
+      sha
+    )
+    expect(run({ type: 'open', requestId: 2, entry })?.headSha).toBeNull()
+  })
+
   it('records GitHub posts on the current review', () => {
     const record = {
       at: 1,
@@ -110,6 +129,24 @@ describe('reviewReducer', () => {
       findingIds: ['f1']
     }
     const s = run(start, started, ev({ type: 'done', result }), { type: 'posted', record })
+    expect(s?.posted).toEqual([record])
+  })
+
+  it('records a recovered or repeated submission only once', () => {
+    const record = {
+      at: 1,
+      url: 'u',
+      mode: 'comment' as const,
+      findingIds: ['f1'],
+      submissionId: 's1'
+    }
+    const s = run(
+      start,
+      started,
+      ev({ type: 'done', result }),
+      { type: 'posted', record },
+      { type: 'posted', record }
+    )
     expect(s?.posted).toEqual([record])
   })
 

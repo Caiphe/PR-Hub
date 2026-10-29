@@ -954,6 +954,12 @@ button.primary.danger {
 
 .mode-toggle input {
   position: absolute;
+  /* No size: the global input width would make it overflow, and focusing it scrolled the dialog. */
+  width: 0;
+  min-height: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
   opacity: 0;
   pointer-events: none;
 }
@@ -1776,7 +1782,797 @@ button.secondary:hover:not(:disabled),
   border: 1px solid rgba(255, 116, 129, 0.18);
 }
 
+/* GitHub connection status (PR link field) */
+
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 62%;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--muted);
+  background: rgba(132, 148, 190, 0.1);
+  border: 1px solid rgba(132, 148, 190, 0.16);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.gh-chip > span[aria-live] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gh-chip:hover {
+  border-color: var(--border-strong);
+}
+
+.gh-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.gh-chip-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.gh-chip-spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
+
+.gh-chip-caret {
+  flex: 0 0 auto;
+  font-size: 9px;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+
+.gh-chip[aria-expanded='true'] .gh-chip-caret {
+  transform: rotate(180deg);
+}
+
+.gh-chip-good {
+  color: var(--good);
+  background: var(--good-bg);
+  border-color: rgba(49, 216, 129, 0.2);
+}
+
+.gh-chip-warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: rgba(255, 193, 93, 0.22);
+}
+
+.gh-chip-info {
+  color: var(--info);
+  background: var(--info-bg);
+  border-color: rgba(101, 168, 255, 0.2);
+}
+
+.gh-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  font-size: 12.5px;
+  background: rgba(8, 14, 28, 0.62);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.gh-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 12px;
+  margin: 0;
+}
+
+.gh-facts dt {
+  color: var(--subtle);
+  font-weight: 600;
+}
+
+.gh-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gh-panel-note,
+.gh-panel-foot,
+.gh-panel-error {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.gh-panel-note {
+  color: #dce2f4;
+}
+
+.gh-panel-foot {
+  color: var(--subtle);
+  font-size: 11.5px;
+}
+
+.gh-panel-error {
+  color: var(--bad);
+}
+
+.gh-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+button.small-button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gh-problem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  color: var(--text);
+  background: var(--warn-bg);
+  border: 1px solid rgba(255, 193, 93, 0.2);
+  border-radius: 9px;
+}
+
+.gh-problem p {
+  margin: 0;
+}
+
+.gh-problem-title {
+  color: var(--warn);
+  font-weight: 650;
+}
+
+.gh-problem-steps {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.45;
+}
+
+.gh-problem-steps li + li {
+  margin-top: 3px;
+}
+
+/* Commands wrap rather than scroll, so a long one never widens the dialog or panel. */
+.gh-problem .command,
+.gh-panel-howto .command {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gh-problem-detail summary,
+.gh-panel-howto summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gh-problem-detail pre {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+
+.gh-panel-howto .gh-problem-steps {
+  margin-top: 6px;
+}
+
+/* Inside the post dialog's error box the problem is already framed. */
+.dialog-error:has(.gh-problem) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.dialog-error .gh-problem {
+  background: var(--bad-bg);
+  border-color: rgba(255, 116, 129, 0.2);
+}
+
+.dialog-error .gh-problem-title {
+  color: var(--bad);
+}
+
+.dialog-error .small-button {
+  align-self: flex-start;
+}
+
+/* URL-first intake: PR summary and task source */
+
+.pr-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  background: rgba(8, 14, 28, 0.62);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.pr-summary p {
+  margin: 0;
+}
+
+.pr-summary.is-loading {
+  flex-direction: row;
+  align-items: center;
+  color: var(--muted);
+}
+
+.pr-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-summary-ref {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.pr-summary-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--muted);
+}
+
+.pr-summary-branches {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-summary-meta code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: #c9d2ec;
+}
+
+.pr-summary-warning {
+  margin-top: 2px;
+  padding: 6px 9px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.pr-summary-note {
+  color: var(--subtle);
+  font-size: 11.5px;
+}
+
+.pr-summary.is-error {
+  background: var(--warn-bg);
+  border-color: rgba(255, 193, 93, 0.2);
+}
+
+.pr-summary-error strong {
+  color: var(--warn);
+}
+
+.pr-summary-actions {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pr-summary-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.task-source {
+  min-width: 0;
+  margin: 0;
+  padding-inline: 0;
+  border-inline: 0;
+  border-top: 0;
+}
+
+.field + .task-source,
+.task-source + .field {
+  padding-top: 18px;
+}
+
+.task-source legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.task-source-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  color: #dce2f4;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.task-source-option input {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+  box-shadow: none;
+}
+
+.task-source-option input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task-source-option code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.task-source-hint {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.fill-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  font-size: 12.5px;
+  background: var(--info-bg);
+  border: 1px solid rgba(101, 168, 255, 0.22);
+  border-radius: 9px;
+}
+
+.fill-confirm p {
+  margin: 0;
+}
+
+/* Findings workspace: summary strip, toolbar, filters, navigation */
+
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.severity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.severity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(132, 148, 190, 0.08);
+  border: 1px solid rgba(132, 148, 190, 0.16);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.severity-chip .count {
+  margin-left: 4px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.severity-chip:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.severity-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.severity-chip[aria-pressed='true'] {
+  color: var(--text);
+  background: rgba(105, 101, 255, 0.24);
+  border-color: rgba(132, 127, 255, 0.55);
+}
+
+.severity-chip:focus-visible,
+.findings-filters select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.findings-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.findings-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.findings-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
+.findings-toolbar .small-button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+button.secondary.is-on {
+  color: var(--text);
+  border-color: rgba(132, 127, 255, 0.5);
+}
+
+.findings-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  padding: 10px;
+  background: rgba(8, 14, 28, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.segmented {
+  display: flex;
+  gap: 3px;
+  margin: 0;
+  padding: 3px;
+  background: rgba(16, 25, 47, 0.88);
+  border: 1px solid rgba(139, 158, 207, 0.13);
+  border-radius: 9px;
+}
+
+.segmented legend {
+  float: left;
+  align-self: center;
+  margin-right: 6px;
+  padding: 0 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.segmented label {
+  position: relative;
+  padding: 3px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.segmented label.is-active {
+  color: #fff;
+  background: rgba(105, 101, 255, 0.58);
+}
+
+.segmented input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segmented label:has(input:focus-visible) {
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.filter-select {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.filter-select select {
+  min-height: 28px;
+  padding: 2px 6px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--text);
+  background: rgba(24, 34, 61, 0.72);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+}
+
+.findings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.findings-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.findings-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.findings-nav-buttons .link-button {
+  font-size: 12px;
+}
+
+.nav-step {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  font-size: 14px;
+  border-radius: 7px;
+}
+
+.nav-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.finding-group + .finding-group {
+  margin-top: 4px;
+}
+
+.file-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-title code {
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-card.is-active {
+  border-color: rgba(132, 127, 255, 0.6);
+  box-shadow: 0 0 0 1px rgba(132, 127, 255, 0.3);
+}
+
+.finding-head .dot {
+  margin-right: 0;
+  align-self: center;
+}
+
+.finding-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--info);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.finding-link:hover {
+  text-decoration: underline;
+}
+
+.finding-link:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.post-bar button.primary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.filter-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+}
+
+.filter-empty p {
+  margin: 0;
+}
+
+/* Post dialog: what will be posted, failures, own-PR rules */
+
+.post-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.post-facts dt {
+  color: var(--subtle);
+  font-weight: 600;
+}
+
+.post-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.post-facts code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.post-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--bad-bg);
+  border: 1px solid rgba(255, 116, 129, 0.22);
+  border-radius: 10px;
+}
+
+.post-failure p {
+  margin: 0;
+}
+
+.post-failure a {
+  color: var(--info);
+}
+
+.post-failure-title {
+  color: var(--bad);
+  font-weight: 650;
+}
+
+.post-failure.is-unclear {
+  background: var(--warn-bg);
+  border-color: rgba(255, 193, 93, 0.25);
+}
+
+.post-failure.is-unclear .post-failure-title {
+  color: var(--warn);
+}
+
+.post-failure .gh-problem {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.post-failure .gh-problem-title {
+  display: none;
+}
+
+.own-pr-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.own-pr-notice p {
+  margin: 0;
+}
+
+.mode-toggle label.is-disabled:not(.is-active) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.danger-text {
+  color: var(--bad);
+}
+
+.moved-list {
+  color: #f4d69e;
+}
+
 @media (max-width: 410px), (max-height: 590px) {
+  .field + .task-source,
+  .task-source + .field {
+    padding-top: 14px;
+  }
+
+  .gh-chip {
+    max-width: 58%;
+  }
+
   .shell {
     gap: 13px;
     padding: 15px;

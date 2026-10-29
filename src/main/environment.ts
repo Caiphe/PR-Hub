@@ -62,7 +62,8 @@ export function childEnv(base: NodeJS.ProcessEnv, pathValue: string): NodeJS.Pro
   return env
 }
 
-export async function resolveReviewEnvironment(): Promise<ReviewEnvironment> {
+/** Environment for child processes (login-shell PATH plus common install folders). */
+export async function resolveChildEnv(): Promise<NodeJS.ProcessEnv> {
   const home = homedir()
   const extras = [
     '/opt/homebrew/bin',
@@ -73,14 +74,18 @@ export async function resolveReviewEnvironment(): Promise<ReviewEnvironment> {
   const pathValue = [(await loginShellPath()) ?? process.env.PATH ?? '', ...extras]
     .filter(Boolean)
     .join(delimiter)
+  return childEnv(process.env, pathValue)
+}
 
-  const claudePath = await findOnPath('claude', pathValue)
+export async function resolveReviewEnvironment(): Promise<ReviewEnvironment> {
+  const env = await resolveChildEnv()
+  const claudePath = await findOnPath('claude', env.PATH ?? '')
   if (!claudePath) {
     throw new Error(
       'Claude Code CLI not found. Install it (https://docs.claude.com/claude-code) and make sure `claude` is on your shell PATH.'
     )
   }
-  return { claudePath, env: childEnv(process.env, pathValue) }
+  return { claudePath, env }
 }
 
 async function findSkillDirs(dir: string, depth: number): Promise<string[]> {

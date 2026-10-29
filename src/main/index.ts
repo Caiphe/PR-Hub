@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { IPC, type ReviewEventBody, type Settings } from '../shared/ipc'
 import type { ReviewInput } from '../shared/validate'
 import { MIN_SIZE } from './bounds'
+import { openExternalInFirefox } from './externalBrowser'
 import { registerGithubIpc } from './githubIpc'
 import { handle } from './ipcGuard'
 import { cancelAllReviews, hasRunningReviews, registerReviewIpc } from './reviewIpc'
@@ -24,6 +25,12 @@ let mainWindow: BrowserWindow | null = null
 // Kept referenced: a garbage-collected Tray disappears from the menu bar.
 let tray: Tray | null = null
 let quitting = false
+
+function openExternalUrl(url: string): void {
+  void openExternalInFirefox(url, (target) => shell.openExternal(target)).catch((error) =>
+    console.error('Failed to open external link', error)
+  )
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -60,9 +67,9 @@ function createWindow(): BrowserWindow {
     if (mainWindow === win) mainWindow = null
   })
 
-  // Open external links (e.g. PR URLs) in the default browser, never in-app.
+  // Open external links (e.g. PR URLs) in local Firefox, never in-app.
   win.webContents.setWindowOpenHandler((details) => {
-    if (/^https?:\/\//.test(details.url)) shell.openExternal(details.url)
+    if (/^https?:\/\//.test(details.url)) openExternalUrl(details.url)
     return { action: 'deny' }
   })
   // The window only ever shows the app. Navigating it (a clicked link without target=_blank,
@@ -70,7 +77,7 @@ function createWindow(): BrowserWindow {
   win.webContents.on('will-navigate', (event, url) => {
     if (url === win.webContents.getURL()) return
     event.preventDefault()
-    if (/^https?:\/\//.test(url)) shell.openExternal(url)
+    if (/^https?:\/\//.test(url)) openExternalUrl(url)
   })
 
   // HMR for renderer base on electron-vite cli.
